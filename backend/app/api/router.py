@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from .endpoints import trading, production, predictions, crops, regions, data_sync, upload
+from .endpoints import trading, production, predictions, crops, regions, data_sync, upload, traffic_light
 
 api_router = APIRouter()
 api_router.include_router(crops.router, prefix="/crops", tags=["crops"])
@@ -11,3 +11,6 @@ api_router.include_router(
 )
 api_router.include_router(data_sync.router, prefix="/sync", tags=["data-sync"])
 api_router.include_router(upload.router, prefix="/upload", tags=["upload"])
+api_router.include_router(
+    traffic_light.router, prefix="/alerts/traffic-light", tags=["alerts"]
+)
