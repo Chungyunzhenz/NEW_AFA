@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.env
+venv/
+.venv/
+
+# Database
+*.db
+*.sqlite3
+
+# Trained models
+backend/trained_models/*.pkl
+backend/trained_models/*.joblib
+
+# Node
+node_modules/
+frontend/node_modules/
+
+# Build output
+frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data archive
+data_archive/
+
+# Logs
+*.log
+
+# Claude
+.claude/
+.superpowers/

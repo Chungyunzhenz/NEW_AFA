@@ -1,0 +1,103 @@
+/* =========================================================================
+   Chart Styles — Taiwan Agricultural Product Prediction System
+   ========================================================================= */
+
+/* --------------- Tooltip card --------------- */
+.chart-tooltip {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.07),
+    0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  min-width: 140px;
+  pointer-events: none;
+}
+
+.chart-tooltip-label {
+  margin: 0 0 0.125rem;
+  font-weight: 600;
+  color: #374151;
+  font-size: 0.8125rem;
+}
+
+.chart-tooltip-value {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------- Legend --------------- */
+.recharts-legend-wrapper {
+  padding-top: 0.25rem !important;
+}
+
+.recharts-legend-item {
+  margin-right: 1rem !important;
+}
+
+.recharts-legend-item-text {
+  color: #4b5563 !important;
+  font-size: 0.8125rem !important;
+  vertical-align: middle;
+}
+
+/* --------------- Axis tweaks --------------- */
+.recharts-cartesian-axis-tick-value {
+  user-select: none;
+}
+
+.recharts-cartesian-grid line {
+  stroke-opacity: 0.6;
+}
+
+/* --------------- Active dot glow --------------- */
+.recharts-active-dot circle {
+  filter: drop-shadow(0 0 3px rgba(14, 165, 233, 0.4));
+}
+
+/* --------------- Chart entrance animation --------------- */
+@keyframes chart-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.recharts-wrapper {
+  animation: chart-fade-in 0.4s ease-out;
+}
+
+/* --------------- Reference line label --------------- */
+.recharts-reference-line-label {
+  font-size: 0.6875rem;
+  fill: #9ca3af;
+}
+
+/* --------------- Responsive overrides --------------- */
+@media (max-width: 640px) {
+  .chart-tooltip {
+    font-size: 0.75rem;
+    min-width: 110px;
+    padding: 0.375rem 0.5rem;
+  }
+
+  .chart-tooltip-label {
+    font-size: 0.75rem;
+  }
+
+  .chart-tooltip-value {
+    font-size: 0.75rem;
+  }
+
+  .recharts-legend-item-text {
+    font-size: 0.75rem !important;
+  }
+}

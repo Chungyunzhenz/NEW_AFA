@@ -1,0 +1,34 @@
+{
+  "crop_key": "cabbage",
+  "display_name_zh": "甘藍",
+  "display_name_en": "Cabbage",
+  "category_code": "N04",
+  "amis_crop_name_patterns": ["甘藍"],
+  "sub_varieties": ["甘藍-初秋", "甘藍-改良種", "甘藍-其他"],
+  "aggregate_varieties": true,
+  "seasonality": {
+    "peak_months": [11, 12, 1, 2, 3],
+    "off_season_months": [6, 7, 8],
+    "transition_months": [4, 5, 9, 10],
+    "seasonality_mode": "additive"
+  },
+  "prophet_config": {
+    "yearly_seasonality": true,
+    "weekly_seasonality": false,
+    "changepoint_prior_scale": 0.1
+  },
+  "sarima_config": {
+    "seasonal_period": 12,
+    "max_p": 3,
+    "max_q": 3,
+    "max_d": 2
+  },
+  "xgboost_config": {
+    "lag_features": [1, 2, 3, 4, 12],
+    "rolling_windows": [4, 8, 12],
+    "include_weather_features": true,
+    "custom_seasonal_features": true
+  },
+  "prediction_horizons_months": [1, 3, 6],
+  "color_theme": "#22c55e"
+}

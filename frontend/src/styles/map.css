@@ -1,0 +1,67 @@
+/* ================================================================== */
+/*  Taiwan Map – SVG & interaction styles                              */
+/* ================================================================== */
+
+/* Base county path styling */
+.taiwan-map-svg .county {
+  transition: fill 0.35s ease, stroke 0.15s ease, stroke-width 0.15s ease;
+  vector-effect: non-scaling-stroke;
+}
+
+.taiwan-map-svg .county:hover {
+  filter: brightness(0.92);
+}
+
+/* Container holds both SVG and absolutely-positioned tooltip */
+.taiwan-map-container {
+  position: relative;
+  user-select: none;
+}
+
+/* ================================================================== */
+/*  County tooltip                                                     */
+/* ================================================================== */
+
+.county-tooltip {
+  pointer-events: none;
+  opacity: 0;
+  animation: tooltip-fade-in 0.12s ease-out forwards;
+}
+
+@keyframes tooltip-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ================================================================== */
+/*  Slide-in animation for county detail panel                         */
+/* ================================================================== */
+
+.animate-slide-in {
+  animation: slide-in-up 0.3s ease-out;
+}
+
+@keyframes slide-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ================================================================== */
+/*  Legend canvas                                                       */
+/* ================================================================== */
+
+canvas {
+  image-rendering: pixelated;
+}

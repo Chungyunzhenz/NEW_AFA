@@ -1,0 +1,34 @@
+{
+  "crop_key": "pineapple",
+  "display_name_zh": "鳳梨",
+  "display_name_en": "Pineapple",
+  "category_code": "N05",
+  "amis_crop_name_patterns": ["鳳梨"],
+  "sub_varieties": ["鳳梨-金鑽鳳梨", "鳳梨-西瓜鳳梨", "鳳梨-其他"],
+  "aggregate_varieties": true,
+  "seasonality": {
+    "peak_months": [3, 4, 5, 6, 7],
+    "off_season_months": [10, 11, 12, 1],
+    "transition_months": [2, 8, 9],
+    "seasonality_mode": "multiplicative"
+  },
+  "prophet_config": {
+    "yearly_seasonality": true,
+    "weekly_seasonality": false,
+    "changepoint_prior_scale": 0.05
+  },
+  "sarima_config": {
+    "seasonal_period": 12,
+    "max_p": 3,
+    "max_q": 3,
+    "max_d": 2
+  },
+  "xgboost_config": {
+    "lag_features": [1, 2, 3, 6, 12],
+    "rolling_windows": [3, 6, 12],
+    "include_weather_features": true,
+    "custom_seasonal_features": true
+  },
+  "prediction_horizons_months": [1, 3, 6],
+  "color_theme": "#f59e0b"
+}

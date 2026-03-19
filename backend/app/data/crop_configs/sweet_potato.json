@@ -1,0 +1,33 @@
+{
+  "crop_key": "sweet_potato",
+  "display_name_zh": "甘藷",
+  "display_name_en": "Sweet Potato",
+  "category_code": "N01",
+  "amis_crop_name_patterns": ["甘藷", "甘薯"],
+  "sub_varieties": ["甘藷-台農57號", "甘藷-台農66號", "甘藷-其他"],
+  "aggregate_varieties": true,
+  "seasonality": {
+    "peak_months": [8, 9, 10, 11],
+    "off_season_months": [3, 4, 5],
+    "seasonality_mode": "additive"
+  },
+  "prophet_config": {
+    "yearly_seasonality": true,
+    "weekly_seasonality": false,
+    "changepoint_prior_scale": 0.05
+  },
+  "sarima_config": {
+    "seasonal_period": 12,
+    "max_p": 3,
+    "max_q": 3,
+    "max_d": 2
+  },
+  "xgboost_config": {
+    "lag_features": [1, 2, 3, 4, 12],
+    "rolling_windows": [4, 8, 12],
+    "include_weather_features": true,
+    "custom_seasonal_features": true
+  },
+  "prediction_horizons_months": [1, 3, 6],
+  "color_theme": "#c2410c"
+}

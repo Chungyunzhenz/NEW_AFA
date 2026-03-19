@@ -1,0 +1,22 @@
+[
+  {"market_code": "104", "market_name": "台北一", "county_code": "63000"},
+  {"market_code": "109", "market_name": "台北二", "county_code": "63000"},
+  {"market_code": "241", "market_name": "三重", "county_code": "65000"},
+  {"market_code": "338", "market_name": "桃園", "county_code": "68000"},
+  {"market_code": "400", "market_name": "台中", "county_code": "66000"},
+  {"market_code": "514", "market_name": "溪湖", "county_code": "10007"},
+  {"market_code": "648", "market_name": "西螺", "county_code": "10009"},
+  {"market_code": "710", "market_name": "永康", "county_code": "67000"},
+  {"market_code": "800", "market_name": "鳳山", "county_code": "64000"},
+  {"market_code": "900", "market_name": "屏東", "county_code": "10013"},
+  {"market_code": "420", "market_name": "豐原", "county_code": "66000"},
+  {"market_code": "220", "market_name": "板橋", "county_code": "65000"},
+  {"market_code": "260", "market_name": "宜蘭", "county_code": "10002"},
+  {"market_code": "300", "market_name": "新竹", "county_code": "10018"},
+  {"market_code": "360", "market_name": "苗栗", "county_code": "10005"},
+  {"market_code": "500", "market_name": "彰化", "county_code": "10007"},
+  {"market_code": "540", "market_name": "南投", "county_code": "10008"},
+  {"market_code": "600", "market_name": "嘉義", "county_code": "10020"},
+  {"market_code": "950", "market_name": "花蓮", "county_code": "10015"},
+  {"market_code": "960", "market_name": "台東", "county_code": "10014"}
+]
