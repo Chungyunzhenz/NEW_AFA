@@ -134,9 +134,9 @@ def add_weather_features(
     df: pd.DataFrame,
     date_col: str,
     weather_df: pd.DataFrame,
-    weather_date_col: str = "date",
-    temp_col: str = "avg_temperature",
-    rain_col: str = "cumulative_rainfall",
+    weather_date_col: str = "ds",
+    temp_col: str = "temp_avg",
+    rain_col: str = "rainfall_mm",
 ) -> pd.DataFrame:
     """Merge monthly weather data and compute a temperature anomaly.
 
@@ -245,7 +245,12 @@ def build_features(
     out = add_yoy_features(out, value_col)
 
     if weather_df is not None and not weather_df.empty:
-        out = add_weather_features(out, date_col, weather_df)
+        out = add_weather_features(
+            out, date_col, weather_df,
+            weather_date_col="ds",
+            temp_col="temp_avg",
+            rain_col="rainfall_mm",
+        )
 
     if drop_na:
         # Fill NaN in lag/yoy/rolling-std columns with 0 for early rows

@@ -72,8 +72,12 @@ STATION_COUNTY_MAP: Dict[str, str] = {
     "467990": "09007",   # 連江 (Lienchiang / Matsu)
 }
 
-# CWA daily observation dataset ID
-CWA_DAILY_DATASET_ID = "O-A0003-001"
+# CWA dataset IDs
+CWA_REALTIME_DATASET_ID = "O-A0003-001"    # 即時觀測（最新資料）
+CWA_HISTORICAL_DATASET_ID = "C-B0024-002"  # 歷史逐日氣候資料
+
+# 即時 dataset 只回傳最近的觀測值，超過此天數應改用歷史 dataset
+_REALTIME_CUTOFF_DAYS = 2
 
 
 class CWAWeatherCollector:
@@ -99,19 +103,33 @@ class CWAWeatherCollector:
             c.county_code: c.id for c in db.query(County).all()
         }
 
+    def _is_recent(self, target_date: date) -> bool:
+        """Return True if *target_date* is within the realtime cutoff window."""
+        return (date.today() - target_date).days <= _REALTIME_CUTOFF_DAYS
+
     def _fetch_observations(self, target_date: date) -> List[Dict[str, Any]]:
         """Call CWA API and return the station-level observations list.
 
-        The daily observation endpoint returns a JSON structure rooted at
-        ``records.Station``.  Each station element contains ``StationId``
-        and various weather elements.
+        Uses the realtime dataset (``O-A0003-001``) for recent dates (within
+        the last 2 days) and the historical dataset (``C-B0024-002``) for
+        older dates, passing ``dataDate`` so CWA returns the correct day.
         """
-        url = f"{settings.CWA_API_BASE}/{CWA_DAILY_DATASET_ID}"
-        params = {
+        use_realtime = self._is_recent(target_date)
+        dataset_id = CWA_REALTIME_DATASET_ID if use_realtime else CWA_HISTORICAL_DATASET_ID
+
+        params: Dict[str, str] = {
             "Authorization": self.api_key,
             "format": "JSON",
         }
-        logger.debug("Requesting CWA observations for %s", target_date)
+
+        if not use_realtime:
+            # Historical dataset requires an explicit date
+            params["dataDate"] = target_date.isoformat()
+
+        url = f"{settings.CWA_API_BASE}/{dataset_id}"
+        logger.debug(
+            "Requesting CWA observations for %s (dataset=%s)", target_date, dataset_id,
+        )
 
         try:
             resp = requests.get(url, params=params, timeout=self.REQUEST_TIMEOUT, verify=settings.VERIFY_SSL)
@@ -121,8 +139,16 @@ class CWAWeatherCollector:
             # Navigate the CWA response structure
             records = payload.get("records", {})
             stations = records.get("Station", records.get("station", []))
+
+            # Historical dataset may nest data under different keys
+            if not stations:
+                stations = records.get("data", records.get("Data", []))
+
             if not isinstance(stations, list):
-                logger.warning("Unexpected CWA response structure for %s.", target_date)
+                logger.warning(
+                    "Unexpected CWA response structure for %s (dataset=%s).",
+                    target_date, dataset_id,
+                )
                 return []
             return stations
         except requests.RequestException as exc:
@@ -155,7 +181,7 @@ class CWAWeatherCollector:
 
         weather = station.get("WeatherElement", station)
 
-        # Temperature
+        # Temperature — try multiple paths for realtime / historical formats
         temp_info = weather.get("AirTemperature", {})
         temp_avg = _safe(temp_info.get("Average"))
         temp_max = _safe(temp_info.get("Maximum"))
@@ -164,26 +190,51 @@ class CWAWeatherCollector:
         # Fallback: direct keys at top level or under DailyExtreme
         if temp_avg is None:
             temp_avg = _safe(weather.get("TEMP"))
+        if temp_avg is None:
+            # Historical dataset: Mean/MeanTemperature
+            temp_avg = _safe(weather.get("Mean"))
+        if temp_avg is None:
+            temp_avg = _safe(weather.get("MeanTemperature"))
+
         if temp_max is None:
             daily_high = weather.get("DailyExtreme", {}).get("DailyHigh", {})
             temp_max = _safe(daily_high.get("TemperatureInfo", {}).get("AirTemperature"))
+        if temp_max is None:
+            temp_max = _safe(weather.get("Maximum"))
+        if temp_max is None:
+            temp_max = _safe(weather.get("MaxTemperature"))
+
         if temp_min is None:
             daily_low = weather.get("DailyExtreme", {}).get("DailyLow", {})
             temp_min = _safe(daily_low.get("TemperatureInfo", {}).get("AirTemperature"))
+        if temp_min is None:
+            temp_min = _safe(weather.get("Minimum"))
+        if temp_min is None:
+            temp_min = _safe(weather.get("MinTemperature"))
 
-        # Rainfall
+        # Rainfall — try multiple paths
         precip_info = weather.get("Now", {}).get("Precipitation", {})
         rainfall = _safe(precip_info.get("Accumulation"))
         if rainfall is None:
             rainfall = _safe(weather.get("RAIN"))
         if rainfall is None:
             rainfall = _safe(weather.get("Precipitation"))
+        if rainfall is None:
+            # Historical dataset: Rainfall / TotalRainfall
+            rainfall = _safe(weather.get("Rainfall"))
+        if rainfall is None:
+            rainfall = _safe(weather.get("TotalRainfall"))
 
-        # Humidity
+        # Humidity — try multiple paths
         humidity_info = weather.get("RelativeHumidity", {})
         humidity = _safe(humidity_info.get("Average"))
         if humidity is None:
             humidity = _safe(weather.get("HUMD"))
+        if humidity is None:
+            # Historical dataset: MeanRH / RH
+            humidity = _safe(weather.get("MeanRH"))
+        if humidity is None:
+            humidity = _safe(weather.get("RH"))
         # CWA sometimes returns humidity as a 0-1 ratio
         if humidity is not None and humidity <= 1.0:
             humidity = humidity * 100.0
