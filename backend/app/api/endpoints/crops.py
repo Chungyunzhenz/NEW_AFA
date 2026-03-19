@@ -2,10 +2,12 @@ import json
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ...database import get_db
 from ...models.crop import Crop
+from ...models.trading import TradingData
 from ...schemas.crop import CropResponse, CropDetailResponse
 
 router = APIRouter()
@@ -25,16 +27,29 @@ def list_crops(
     limit: int = 100,
     db: Session = Depends(get_db),
 ):
-    """List all active crops."""
-    crops = (
-        db.query(Crop)
+    """List all active crops, with has_data flag and sorted (has_data first)."""
+    # Sub-query: count trading records per crop
+    trading_sub = (
+        db.query(
+            TradingData.crop_id,
+            func.count(TradingData.id).label("cnt"),
+        )
+        .group_by(TradingData.crop_id)
+        .subquery()
+    )
+
+    rows = (
+        db.query(Crop, trading_sub.c.cnt)
+        .outerjoin(trading_sub, Crop.id == trading_sub.c.crop_id)
         .filter(Crop.is_active == True)  # noqa: E712
+        .order_by(trading_sub.c.cnt.desc().nullslast(), Crop.display_name_zh)
         .offset(skip)
         .limit(min(limit, 1000))
         .all()
     )
+
     results = []
-    for c in crops:
+    for c, cnt in rows:
         config = {}
         if c.config_json:
             try:
@@ -50,6 +65,7 @@ def list_crops(
                 category_code=c.category_code or "",
                 is_active=c.is_active,
                 color_theme=config.get("color_theme"),
+                has_data=(cnt or 0) > 0,
             )
         )
     return results

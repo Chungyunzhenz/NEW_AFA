@@ -10,6 +10,7 @@ class CropResponse(BaseModel):
     category_code: str
     is_active: bool
     color_theme: Optional[str] = None
+    has_data: bool = False
 
     model_config = {"from_attributes": True}
 

@@ -36,6 +36,9 @@ export default function CropSelector({ compact = false }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  const openCrops = crops.filter((c) => c.has_data);
+  const closedCrops = crops.filter((c) => !c.has_data);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -49,9 +52,9 @@ export default function CropSelector({ compact = false }) {
           const list = Array.isArray(data) ? data : data?.items ?? [];
           setCrops(list);
 
-          // Auto-select first crop when nothing selected
+          // Auto-select first crop that has data, fallback to first crop
           if (!selectedCrop && list.length > 0) {
-            const first = list[0];
+            const first = list.find((c) => c.has_data) || list[0];
             const firstId = first.crop_key ?? first.id ?? first.name ?? first;
             const firstLabel = first.display_name_zh ?? first.name ?? firstId;
             setSelectedCrop(firstId, firstLabel);
@@ -107,13 +110,24 @@ export default function CropSelector({ compact = false }) {
           ].join(' ')}
         >
           <option value="">選擇作物</option>
-          {crops.map((crop) => {
-            const id = crop.crop_key ?? crop.id ?? crop.name ?? crop;
-            const name = crop.display_name_zh ?? crop.name ?? crop;
-            return (
-              <option key={id} value={id}>{name}</option>
-            );
-          })}
+          {openCrops.length > 0 && (
+            <optgroup label="✓ 已開放">
+              {openCrops.map((crop) => {
+                const id = crop.crop_key ?? crop.id ?? crop.name ?? crop;
+                const name = crop.display_name_zh ?? crop.name ?? crop;
+                return <option key={id} value={id}>{name}</option>;
+              })}
+            </optgroup>
+          )}
+          {closedCrops.length > 0 && (
+            <optgroup label="— 未開放">
+              {closedCrops.map((crop) => {
+                const id = crop.crop_key ?? crop.id ?? crop.name ?? crop;
+                const name = crop.display_name_zh ?? crop.name ?? crop;
+                return <option key={id} value={id}>{name} (尚無資料)</option>;
+              })}
+            </optgroup>
+          )}
         </select>
         <svg
           className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400"
@@ -162,15 +176,32 @@ export default function CropSelector({ compact = false }) {
         >
           <option value="">-- 請選擇作物 --</option>
 
-          {crops.map((crop) => {
-            const id = crop.crop_key ?? crop.id ?? crop.name ?? crop;
-            const name = crop.display_name_zh ?? crop.name ?? crop;
-            return (
-              <option key={id} value={id}>
-                {name}
-              </option>
-            );
-          })}
+          {openCrops.length > 0 && (
+            <optgroup label="✓ 已開放">
+              {openCrops.map((crop) => {
+                const id = crop.crop_key ?? crop.id ?? crop.name ?? crop;
+                const name = crop.display_name_zh ?? crop.name ?? crop;
+                return (
+                  <option key={id} value={id}>
+                    {name}
+                  </option>
+                );
+              })}
+            </optgroup>
+          )}
+          {closedCrops.length > 0 && (
+            <optgroup label="— 未開放">
+              {closedCrops.map((crop) => {
+                const id = crop.crop_key ?? crop.id ?? crop.name ?? crop;
+                const name = crop.display_name_zh ?? crop.name ?? crop;
+                return (
+                  <option key={id} value={id}>
+                    {name} (尚無資料)
+                  </option>
+                );
+              })}
+            </optgroup>
+          )}
         </select>
 
         {/* Dropdown chevron */}
