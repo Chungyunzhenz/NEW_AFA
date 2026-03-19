@@ -1,12 +1,4 @@
-import { NavLink } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-
-const NAV_ITEMS = [
-  { to: '/', label: '主頁' },
-  { to: '/trading', label: '交易分析' },
-  { to: '/forecast', label: '預測結果' },
-  { to: '/data', label: '資料管理' },
-];
 
 export default function Header({ onToggleFilter, filterOpen }) {
   const [backendUp, setBackendUp] = useState(null);
@@ -14,7 +6,7 @@ export default function Header({ onToggleFilter, filterOpen }) {
   useEffect(() => {
     let cancelled = false;
     const check = () =>
-      fetch('/health')
+      fetch('/api/v1/crops')
         .then((r) => { if (!cancelled) setBackendUp(r.ok); })
         .catch(() => { if (!cancelled) setBackendUp(false); });
     check();
@@ -25,7 +17,7 @@ export default function Header({ onToggleFilter, filterOpen }) {
   return (
     <header className="fixed top-0 right-0 left-0 z-40 border-b border-gray-800 bg-gray-900 shadow-lg">
       <div className="flex h-16 items-center justify-between px-4 lg:px-6">
-        {/* Left section: hamburger + logo */}
+        {/* Left section: logo */}
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600">
@@ -41,27 +33,6 @@ export default function Header({ onToggleFilter, filterOpen }) {
             </h1>
           </div>
         </div>
-
-        {/* Center navigation */}
-        <nav className="hidden md:flex md:items-center md:gap-1">
-          {NAV_ITEMS.map(({ to, label }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={to === '/'}
-              className={({ isActive }) =>
-                [
-                  'rounded-lg px-3.5 py-2 text-sm font-medium transition-colors duration-150',
-                  isActive
-                    ? 'bg-emerald-600/20 text-emerald-400'
-                    : 'text-gray-300 hover:bg-gray-800 hover:text-white',
-                ].join(' ')
-              }
-            >
-              {label}
-            </NavLink>
-          ))}
-        </nav>
 
         {/* Right section: filter toggle (mobile) + status indicator */}
         <div className="flex items-center gap-3">
@@ -83,27 +54,6 @@ export default function Header({ onToggleFilter, filterOpen }) {
           </div>
         </div>
       </div>
-
-      {/* Mobile navigation bar */}
-      <nav className="flex items-center gap-1 overflow-x-auto border-t border-gray-800 px-4 py-2 md:hidden">
-        {NAV_ITEMS.map(({ to, label }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={to === '/'}
-            className={({ isActive }) =>
-              [
-                'shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors duration-150',
-                isActive
-                  ? 'bg-emerald-600/20 text-emerald-400'
-                  : 'text-gray-400 hover:bg-gray-800 hover:text-white',
-              ].join(' ')
-            }
-          >
-            {label}
-          </NavLink>
-        ))}
-      </nav>
     </header>
   );
 }

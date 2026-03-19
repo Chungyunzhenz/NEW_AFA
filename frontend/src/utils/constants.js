@@ -54,3 +54,33 @@ export const DEFAULT_DATE_RANGE = Object.freeze({
   startDate: '2025-01-01',
   endDate: '2025-12-31',
 });
+
+/**
+ * Traffic light signal levels.
+ */
+export const TRAFFIC_SIGNALS = Object.freeze({
+  GREEN: 'GREEN',
+  YELLOW: 'YELLOW',
+  RED: 'RED',
+  UNKNOWN: 'UNKNOWN',
+});
+
+/**
+ * Human-readable labels for traffic signals (Chinese).
+ */
+export const TRAFFIC_SIGNAL_LABELS = Object.freeze({
+  [TRAFFIC_SIGNALS.GREEN]: '正常',
+  [TRAFFIC_SIGNALS.YELLOW]: '注意',
+  [TRAFFIC_SIGNALS.RED]: '警戒',
+  [TRAFFIC_SIGNALS.UNKNOWN]: '資料不足',
+});
+
+/**
+ * Thresholds for determining traffic signal levels.
+ * { green: max for GREEN, yellow: max for YELLOW, above yellow = RED }
+ */
+export const TRAFFIC_THRESHOLDS = Object.freeze({
+  supply_index: { green: 1.1, yellow: 1.2 },
+  price_drop_pct: { green: 10, yellow: 20 },
+  area_growth_pct: { green: 10, yellow: 20 },
+});

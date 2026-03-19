@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import Header from './Header';
 import FilterBar from './FilterBar';
+import ChatbotWidget from '../chatbot/ChatbotWidget';
 
 export default function MainLayout({ children }) {
   const [filterOpen, setFilterOpen] = useState(false);
@@ -19,6 +20,8 @@ export default function MainLayout({ children }) {
           {children}
         </div>
       </main>
+
+      <ChatbotWidget />
     </div>
   );
 }
