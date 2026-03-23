@@ -35,6 +35,7 @@ class TradingData(Base):
     market_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("markets.id"), nullable=True
     )
+    market_code_raw: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     price_high: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     price_mid: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     price_low: Mapped[Optional[float]] = mapped_column(Float, nullable=True)

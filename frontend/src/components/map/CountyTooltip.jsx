@@ -1,27 +1,34 @@
 import { useMemo } from 'react';
+import { formatCurrency, formatNumber } from '../../utils/formatters';
 
 /**
  * Floating tooltip that follows the mouse cursor over the map.
  *
  * Props:
- *  - show:        boolean  -- whether the tooltip is visible
- *  - x, y:        number   -- position relative to map container
- *  - county:      string   -- county name (Chinese)
- *  - value:       string   -- formatted metric value
- *  - metricLabel: string   -- human-readable label for the active metric
+ *  - show:             boolean  -- whether the tooltip is visible
+ *  - x, y:             number   -- position relative to map container
+ *  - county:           string   -- county name (Chinese)
+ *  - avgPrice:         number   -- average price
+ *  - volume:           number   -- trading volume (kg)
+ *  - productionTonnes: number   -- production (tonnes)
  */
-export default function CountyTooltip({ show, x, y, county, value, metricLabel }) {
+export default function CountyTooltip({ show, x, y, county, avgPrice, volume, productionTonnes }) {
   const style = useMemo(
     () => ({
       left: x + 16,
       top: y - 12,
-      // Prevent the tooltip from overflowing right edge
-      maxWidth: 220,
+      maxWidth: 240,
     }),
     [x, y],
   );
 
   if (!show) return null;
+
+  const rows = [
+    { label: '平均價格', value: avgPrice ? formatCurrency(avgPrice, 1) : '—' },
+    { label: '交易量', value: volume ? `${formatNumber(volume)} 公斤` : '—' },
+    { label: '產量', value: productionTonnes ? `${formatNumber(productionTonnes)} 公噸` : '—' },
+  ];
 
   return (
     <div
@@ -33,10 +40,14 @@ export default function CountyTooltip({ show, x, y, county, value, metricLabel }
 
       <p className="text-sm font-semibold text-gray-800">{county}</p>
 
-      <div className="mt-1 flex items-baseline gap-1.5">
-        <span className="text-xs text-gray-500">{metricLabel}</span>
-        <span className="text-sm font-medium text-emerald-700">{value}</span>
-      </div>
+      <dl className="mt-1 space-y-0.5">
+        {rows.map((r) => (
+          <div key={r.label} className="flex items-baseline justify-between gap-3">
+            <dt className="text-xs text-gray-500">{r.label}</dt>
+            <dd className="text-sm font-medium tabular-nums text-emerald-700">{r.value}</dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }

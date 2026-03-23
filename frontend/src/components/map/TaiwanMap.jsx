@@ -3,7 +3,6 @@ import * as d3 from 'd3';
 import * as topojson from 'topojson-client';
 import { getGeoJSON } from '../../api/regions';
 import useMapStore from '../../stores/useMapStore';
-import { METRIC_LABELS } from '../../utils/constants';
 import { formatNumber, formatCurrency } from '../../utils/formatters';
 import CountyTooltip from './CountyTooltip';
 import MapLegend from './MapLegend';
@@ -62,7 +61,7 @@ export default function TaiwanMap({ data = [], metric }) {
   const [geoData, setGeoData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [tooltip, setTooltip] = useState({ show: false, x: 0, y: 0, county: '', value: null });
+  const [tooltip, setTooltip] = useState({ show: false, x: 0, y: 0, county: '', avgPrice: 0, volume: 0, productionTonnes: 0 });
 
   const { hoveredCounty, selectedCounty, setHoveredCounty, setSelectedCounty } = useMapStore();
 
@@ -227,7 +226,9 @@ export default function TaiwanMap({ data = [], metric }) {
             x: event.clientX - rect.left,
             y: event.clientY - rect.top,
             county: name,
-            value,
+            avgPrice: record?.avgPrice ?? 0,
+            volume: record?.volume ?? 0,
+            productionTonnes: record?.productionTonnes ?? 0,
           });
         }
       })
@@ -322,8 +323,9 @@ export default function TaiwanMap({ data = [], metric }) {
         x={tooltip.x}
         y={tooltip.y}
         county={tooltip.county}
-        value={formatMetricValue(tooltip.value, metric)}
-        metricLabel={METRIC_LABELS[metric] || metric}
+        avgPrice={tooltip.avgPrice}
+        volume={tooltip.volume}
+        productionTonnes={tooltip.productionTonnes}
       />
 
       {/* Legend */}

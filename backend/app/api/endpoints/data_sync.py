@@ -10,7 +10,9 @@ from ...config import load_crop_configs
 from ...database import SessionLocal, get_db
 from ...models.crop import Crop
 from ...models.production import ProductionData
+from ...models.region import County, Market
 from ...models.trading import TradingData
+from ...models.weather import WeatherData
 
 router = APIRouter()
 
@@ -142,6 +144,26 @@ def get_sync_status(
         .scalar()
     ) or 0
 
+    # Count unmatched market_id
+    unmatched_market_count = (
+        db.query(func.count(TradingData.id))
+        .filter(TradingData.market_id.is_(None))
+        .scalar()
+    ) or 0
+
+    # Count full join chain (trading -> market -> county -> weather)
+    full_chain_count = (
+        db.query(func.count(func.distinct(TradingData.id)))
+        .join(Market, TradingData.market_id == Market.id)
+        .join(County, Market.county_id == County.id)
+        .join(
+            WeatherData,
+            (WeatherData.county_id == County.id)
+            & (WeatherData.observation_date == TradingData.trade_date),
+        )
+        .scalar()
+    ) or 0
+
     # Scheduler status
     try:
         from ...services.scheduler import get_scheduler_status
@@ -155,6 +177,8 @@ def get_sync_status(
         "latest_trade_date": latest_date,
         "crops": crop_stats,
         "unmatched_records": unmatched_count,
+        "unmatched_market_id": unmatched_market_count,
+        "full_chain_joinable": full_chain_count,
         "scheduler": scheduler_info,
         "sync_task": dict(_sync_state),
         "checked_at": datetime.utcnow().isoformat(),
@@ -221,4 +245,49 @@ def backfill_crop_ids(
         "total_unmatched": len(unmatched),
         "newly_matched": matched_count,
         "still_unmatched": len(unmatched) - matched_count,
+    }
+
+
+@router.post("/backfill-market-ids")
+def backfill_market_ids(
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Re-scan trading records with NULL market_id and try to match via market_code_raw."""
+    from ...services.data_collector import AMISDataCollector
+
+    collector = AMISDataCollector()
+    market_lookup = collector.build_market_lookup(db)
+
+    # Only Phase A: match via market_code_raw (no API re-fetch)
+    unmatched = (
+        db.query(TradingData)
+        .filter(
+            TradingData.market_id.is_(None),
+            TradingData.market_code_raw.isnot(None),
+            TradingData.market_code_raw != "",
+        )
+        .all()
+    )
+
+    matched_count = 0
+    for record in unmatched:
+        market_id = market_lookup.get(record.market_code_raw)
+        if market_id is not None:
+            record.market_id = market_id
+            matched_count += 1
+
+    if matched_count > 0:
+        db.commit()
+
+    # Count remaining NULL market_id
+    still_null = (
+        db.query(func.count(TradingData.id))
+        .filter(TradingData.market_id.is_(None))
+        .scalar()
+    ) or 0
+
+    return {
+        "total_with_market_code_raw": len(unmatched),
+        "newly_matched": matched_count,
+        "still_null_market_id": still_null,
     }

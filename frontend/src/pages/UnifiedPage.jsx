@@ -70,6 +70,7 @@ function CountyDetailPanel({ county, mapData, onClose }) {
       <dl className="mt-3 space-y-2 text-sm">
         <div className="flex justify-between"><dt className="text-gray-500">平均價格</dt><dd className="font-medium tabular-nums text-gray-800">NT$ {(countyData.avgPrice ?? 0).toLocaleString('zh-TW', { maximumFractionDigits: 1 })}</dd></div>
         <div className="flex justify-between"><dt className="text-gray-500">交易量</dt><dd className="font-medium tabular-nums text-gray-800">{(countyData.volume ?? 0).toLocaleString('zh-TW')} 公斤</dd></div>
+        <div className="flex justify-between"><dt className="text-gray-500">產量</dt><dd className="font-medium tabular-nums text-gray-800">{countyData.productionTonnes ? `${countyData.productionTonnes.toLocaleString('zh-TW')} 公噸` : '—'}</dd></div>
       </dl>
     </div>
   );

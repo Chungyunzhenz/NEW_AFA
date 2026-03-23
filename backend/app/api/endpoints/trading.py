@@ -1,9 +1,12 @@
+import logging
 from datetime import date
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from ...database import get_db
 from ...models.crop import Crop
@@ -163,6 +166,18 @@ def get_trading_by_county(
     Groups through Market -> County relationship.
     """
     crop = _get_crop_or_404(db, crop_key)
+
+    # Warn if records are being excluded due to NULL market_id
+    null_market_count = (
+        db.query(func.count(TradingData.id))
+        .filter(TradingData.crop_id == crop.id, TradingData.market_id.is_(None))
+        .scalar()
+    )
+    if null_market_count:
+        logger.warning(
+            "by-county: excluded %d records with NULL market_id for crop %s",
+            null_market_count, crop_key,
+        )
 
     query = (
         db.query(

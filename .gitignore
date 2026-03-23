@@ -37,6 +37,9 @@ Thumbs.db
 # Data archive
 data_archive/
 
+# Downloaded data (CODiS CSVs, etc.)
+data/codis_downloads/
+
 # Logs
 *.log
 

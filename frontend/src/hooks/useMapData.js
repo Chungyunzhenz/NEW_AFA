@@ -41,6 +41,8 @@ export default function useMapData() {
 
       try {
         let data;
+        let tradingByCounty = [];
+        let productionByCounty = [];
 
         if (mapLayer === 'prediction') {
           data = await getPredictionsByCounty({
@@ -49,33 +51,51 @@ export default function useMapData() {
           });
         } else if (mapLayer === 'production') {
           const year = dateRange.startDate?.slice(0, 4);
-          data = await getProductionByCounty({
-            crop: selectedCrop,
-            year,
-          });
+          // Fetch both production (primary) and trading (secondary) in parallel
+          const [prodData, tradData] = await Promise.all([
+            getProductionByCounty({ crop: selectedCrop, year }),
+            getTradingByCounty({ crop: selectedCrop, startDate: dateRange.startDate, endDate: dateRange.endDate }).catch(() => []),
+          ]);
+          data = prodData;
+          productionByCounty = Array.isArray(prodData) ? prodData : [];
+          tradingByCounty = Array.isArray(tradData) ? tradData : [];
         } else {
-          // Default: trading layer
-          data = await getTradingByCounty({
-            crop: selectedCrop,
-            startDate: dateRange.startDate,
-            endDate: dateRange.endDate,
-          });
+          // Default: trading layer — also fetch production
+          const year = dateRange.startDate?.slice(0, 4);
+          const [tradData, prodData] = await Promise.all([
+            getTradingByCounty({ crop: selectedCrop, startDate: dateRange.startDate, endDate: dateRange.endDate }),
+            getProductionByCounty({ crop: selectedCrop, year }).catch(() => []),
+          ]);
+          data = tradData;
+          tradingByCounty = Array.isArray(tradData) ? tradData : [];
+          productionByCounty = Array.isArray(prodData) ? prodData : [];
         }
 
         // Only apply result if this is still the latest request
         if (!cancelled && requestId === abortRef.current) {
+          // Build lookup maps for merging
+          const toKey = (item) => item.county_code ?? item.countyId ?? item.county_id ?? item.id;
+          const tradMap = new Map(tradingByCounty.map((t) => [toKey(t), t]));
+          const prodMap = new Map(productionByCounty.map((p) => [toKey(p), p]));
+
           // Normalise data for map consumption.
-          // Each record should have at minimum { countyId, countyName, value }.
-          const normalised = (Array.isArray(data) ? data : []).map((item) => ({
-            countyId: item.county_code ?? item.countyId ?? item.county_id ?? item.id,
-            countyName: item.county_name_zh ?? item.countyName ?? item.county_name ?? item.name,
-            value: metric === 'trading_volume'
-              ? (item.volume ?? 0)
-              : (item.avg_price ?? item.value ?? 0),
-            volume: item.volume ?? 0,
-            avgPrice: item.avg_price ?? 0,
-            raw: item,
-          }));
+          // Each record has { countyId, countyName, value, avgPrice, volume, productionTonnes }.
+          const normalised = (Array.isArray(data) ? data : []).map((item) => {
+            const id = toKey(item);
+            const tradItem = tradMap.get(id);
+            const prodItem = prodMap.get(id);
+            return {
+              countyId: id,
+              countyName: item.county_name_zh ?? item.countyName ?? item.county_name ?? item.name,
+              value: metric === 'trading_volume'
+                ? (item.volume ?? 0)
+                : (item.avg_price ?? item.value ?? 0),
+              avgPrice: tradItem?.avg_price ?? item.avg_price ?? 0,
+              volume: tradItem?.volume ?? item.volume ?? 0,
+              productionTonnes: prodItem?.production_tonnes ?? prodItem?.value ?? item.production_tonnes ?? 0,
+              raw: item,
+            };
+          });
           setMapData(normalised);
         }
       } catch (err) {

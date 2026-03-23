@@ -227,6 +227,7 @@ class AMISDataCollector:
                     "crop_id": crop_id,
                     "crop_name_raw": crop_name_raw,
                     "market_id": market_id,
+                    "market_code_raw": market_code or None,
                     "price_high": self._safe_float(row.get("上價")),
                     "price_mid": self._safe_float(row.get("中價")),
                     "price_low": self._safe_float(row.get("下價")),
