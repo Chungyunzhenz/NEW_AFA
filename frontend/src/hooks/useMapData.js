@@ -67,11 +67,13 @@ export default function useMapData() {
           // Normalise data for map consumption.
           // Each record should have at minimum { countyId, countyName, value }.
           const normalised = (Array.isArray(data) ? data : []).map((item) => ({
-            countyId: item.countyId ?? item.county_id ?? item.county_code ?? item.id,
-            countyName: item.countyName ?? item.county_name ?? item.county_name_zh ?? item.name,
-            value: item[metric] ?? 0,
-            volume: item.volume ?? item.trading_volume ?? item.volume_total ?? 0,
-            avgPrice: item.avgPrice ?? item.avg_price ?? item.price_avg ?? 0,
+            countyId: item.county_code ?? item.countyId ?? item.county_id ?? item.id,
+            countyName: item.county_name_zh ?? item.countyName ?? item.county_name ?? item.name,
+            value: metric === 'trading_volume'
+              ? (item.volume ?? 0)
+              : (item.avg_price ?? item.value ?? 0),
+            volume: item.volume ?? 0,
+            avgPrice: item.avg_price ?? 0,
             raw: item,
           }));
           setMapData(normalised);

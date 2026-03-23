@@ -5,7 +5,7 @@ import client from './client';
  * @param {Object} params - { category, search }
  */
 export function getCrops(params = {}) {
-  return client.get('/crops', { params });
+  return client.get('/crops/', { params });
 }
 
 /**

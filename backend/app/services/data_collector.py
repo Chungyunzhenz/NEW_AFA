@@ -80,7 +80,7 @@ class AMISDataCollector:
     # ------------------------------------------------------------------
     # Crop-name matching
     # ------------------------------------------------------------------
-    def _build_crop_lookup(self, db: Session) -> Dict[str, int]:
+    def build_crop_lookup(self, db: Session) -> Dict[str, int]:
         """Build a mapping of *crop_name prefix* -> ``Crop.id``.
 
         The crop config files carry ``amis_crop_name_patterns`` — a list
@@ -117,7 +117,7 @@ class AMISDataCollector:
     # Market lookup
     # ------------------------------------------------------------------
     @staticmethod
-    def _build_market_lookup(db: Session) -> Dict[str, int]:
+    def build_market_lookup(db: Session) -> Dict[str, int]:
         """Return a mapping of ``market_code`` -> ``Market.id``."""
         return {
             m.market_code: m.id
@@ -172,6 +172,7 @@ class AMISDataCollector:
         db: Session,
         crop_lookup: Dict[str, int],
         market_lookup: Dict[str, int],
+        skip_duplicate_check: bool = False,
     ) -> int:
         """Parse the AMIS JSON array and persist to the database.
 
@@ -179,9 +180,14 @@ class AMISDataCollector:
         are skipped thanks to the unique constraint; we proactively check
         before inserting to avoid integrity-error noise.
 
+        When *skip_duplicate_check* is True, the per-row DB query is
+        skipped (batch dedup within the response is still performed).
+        This is safe when the caller already verified the date has no
+        existing data.
+
         Returns the number of newly inserted rows.
         """
-        inserted = 0
+        records_to_insert: list = []
         seen_keys: set = set()  # track keys within this batch
         for row in data:
             try:
@@ -195,12 +201,6 @@ class AMISDataCollector:
                 trade_date = self._from_roc_date(trade_date_str)
                 market_id = market_lookup.get(market_code)
                 crop_id = self._match_crop_id(crop_name_raw, crop_lookup)
-                if crop_id is None:
-                    logger.warning(
-                        "未匹配作物名稱: '%s' — 此記錄的 crop_id 將為 NULL，"
-                        "可能需要擴充 amis_crop_name_patterns。",
-                        crop_name_raw,
-                    )
 
                 # Deduplicate within the same batch
                 batch_key = (trade_date, crop_name_raw, market_id)
@@ -208,43 +208,38 @@ class AMISDataCollector:
                     continue
                 seen_keys.add(batch_key)
 
-                # Duplicate check (upsert-style: skip if exists in DB)
-                existing = (
-                    db.query(TradingData.id)
-                    .filter(
-                        TradingData.trade_date == trade_date,
-                        TradingData.crop_name_raw == crop_name_raw,
-                        TradingData.market_id == market_id,
+                if not skip_duplicate_check:
+                    # Duplicate check (upsert-style: skip if exists in DB)
+                    existing = (
+                        db.query(TradingData.id)
+                        .filter(
+                            TradingData.trade_date == trade_date,
+                            TradingData.crop_name_raw == crop_name_raw,
+                            TradingData.market_id == market_id,
+                        )
+                        .first()
                     )
-                    .first()
-                )
-                if existing is not None:
-                    continue
+                    if existing is not None:
+                        continue
 
-                price_high = self._safe_float(row.get("上價"))
-                price_mid = self._safe_float(row.get("中價"))
-                price_low = self._safe_float(row.get("下價"))
-                price_avg = self._safe_float(row.get("平均價"))
-                volume = self._safe_float(row.get("交易量"))
-
-                record = TradingData(
-                    trade_date=trade_date,
-                    crop_id=crop_id,
-                    crop_name_raw=crop_name_raw,
-                    market_id=market_id,
-                    price_high=price_high,
-                    price_mid=price_mid,
-                    price_low=price_low,
-                    price_avg=price_avg,
-                    volume=volume,
-                )
-                db.add(record)
-                inserted += 1
+                records_to_insert.append({
+                    "trade_date": trade_date,
+                    "crop_id": crop_id,
+                    "crop_name_raw": crop_name_raw,
+                    "market_id": market_id,
+                    "price_high": self._safe_float(row.get("上價")),
+                    "price_mid": self._safe_float(row.get("中價")),
+                    "price_low": self._safe_float(row.get("下價")),
+                    "price_avg": self._safe_float(row.get("平均價")),
+                    "volume": self._safe_float(row.get("交易量")),
+                })
             except Exception:
                 logger.exception("Error parsing AMIS row: %s", row)
                 continue
 
+        inserted = len(records_to_insert)
         if inserted > 0:
+            db.bulk_insert_mappings(TradingData, records_to_insert)
             db.commit()
         return inserted
 
@@ -256,15 +251,34 @@ class AMISDataCollector:
 
         Returns the count of newly inserted rows.
         """
-        crop_lookup = self._build_crop_lookup(db)
-        market_lookup = self._build_market_lookup(db)
+        crop_lookup = self.build_crop_lookup(db)
+        market_lookup = self.build_market_lookup(db)
+        return self.fetch_single_day_with_lookups(
+            target_date, db, crop_lookup, market_lookup
+        )
 
+    def fetch_single_day_with_lookups(
+        self,
+        target_date: date,
+        db: Session,
+        crop_lookup: Dict[str, int],
+        market_lookup: Dict[str, int],
+        skip_duplicate_check: bool = False,
+    ) -> int:
+        """Fetch trading data for *target_date* using pre-built lookups.
+
+        Same as :meth:`fetch_single_day` but avoids rebuilding the
+        crop/market lookup maps on every call — useful for batch runs.
+        """
         data = self._fetch_api(target_date)
         if not data:
             logger.info("No records returned for %s.", target_date)
             return 0
 
-        inserted = self._parse_amis_response(data, db, crop_lookup, market_lookup)
+        inserted = self._parse_amis_response(
+            data, db, crop_lookup, market_lookup,
+            skip_duplicate_check=skip_duplicate_check,
+        )
         logger.info(
             "Date %s: fetched %d rows, inserted %d new records.",
             target_date,
@@ -289,8 +303,8 @@ class AMISDataCollector:
                 f"start_date ({start_date}) must not be after end_date ({end_date})."
             )
 
-        crop_lookup = self._build_crop_lookup(db)
-        market_lookup = self._build_market_lookup(db)
+        crop_lookup = self.build_crop_lookup(db)
+        market_lookup = self.build_market_lookup(db)
 
         total_inserted = 0
         current = start_date

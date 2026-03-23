@@ -29,7 +29,7 @@ class TradingAggregated(BaseModel):
 class TradingByCounty(BaseModel):
     county_code: str
     county_name_zh: str
-    value: float
-    metric: str
+    avg_price: float
+    volume: float
 
     model_config = {"from_attributes": True}

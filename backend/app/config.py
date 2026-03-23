@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     VERIFY_SSL: bool = False
 
     class Config:
-        env_file = ".env"
+        env_file = str(Path(__file__).resolve().parent.parent / ".env")
         env_file_encoding = "utf-8"
 
 

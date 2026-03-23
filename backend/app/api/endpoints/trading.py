@@ -156,11 +156,6 @@ def get_trading_by_county(
     crop_key: str,
     start_date: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
-    metric: str = Query(
-        "price_avg",
-        description="Metric to aggregate: price_avg or volume",
-        pattern="^(price_avg|volume)$",
-    ),
     db: Session = Depends(get_db),
 ):
     """
@@ -169,16 +164,12 @@ def get_trading_by_county(
     """
     crop = _get_crop_or_404(db, crop_key)
 
-    if metric == "volume":
-        value_expr = func.sum(TradingData.volume)
-    else:
-        value_expr = func.avg(TradingData.price_avg)
-
     query = (
         db.query(
             County.county_code,
             County.county_name_zh,
-            value_expr.label("value"),
+            func.avg(TradingData.price_avg).label("avg_price"),
+            func.sum(TradingData.volume).label("volume"),
         )
         .select_from(TradingData)
         .join(Market, TradingData.market_id == Market.id)
@@ -195,17 +186,15 @@ def get_trading_by_county(
 
     rows = query.all()
 
-    results = []
-    for row in rows:
-        results.append(
-            TradingByCounty(
-                county_code=row.county_code,
-                county_name_zh=row.county_name_zh,
-                value=round(row.value, 2) if row.value else 0.0,
-                metric=metric,
-            )
+    return [
+        TradingByCounty(
+            county_code=r.county_code,
+            county_name_zh=r.county_name_zh,
+            avg_price=round(r.avg_price, 2) if r.avg_price else 0.0,
+            volume=round(r.volume, 2) if r.volume else 0.0,
         )
-    return results
+        for r in rows
+    ]
 
 
 @router.get(

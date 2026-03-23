@@ -45,36 +45,45 @@ STATION_COUNTY_MAP: Dict[str, str] = {
     # Northern Taiwan
     "466920": "63000",   # 臺北 (Taipei)
     "466910": "65000",   # 鞍部/新北
-    "C0A520": "65000",   # 板橋/新北
-    "467050": "10017",   # 基隆 (Keelung)
-    "C0C700": "10002",   # 宜蘭 (Yilan)
+    "C0A520": "65000",   # 板橋/新北 (realtime)
+    "466881": "65000",   # 板橋/新北 (historical C-B0024-001)
+    "467050": "10017",   # 基隆 (Keelung, realtime)
+    "466940": "10017",   # 基隆 (historical C-B0024-001)
+    "C0C700": "10002",   # 宜蘭 (Yilan, realtime)
+    "467080": "10002",   # 宜蘭 (historical C-B0024-001)
     "C0D100": "68000",   # 桃園 (Taoyuan)
     "C0E520": "10004",   # 新竹縣
     "467571": "10018",   # 新竹市
-    "C0E400": "10005",   # 苗栗 (Miaoli)
+    "C0E400": "10005",   # 苗栗 (Miaoli, realtime)
+    "467280": "10005",   # 苗栗/後龍 (historical C-B0024-001)
     # Central Taiwan
     "467490": "66000",   # 臺中 (Taichung)
-    "C0F9A0": "10007",   # 彰化 (Changhua)
-    "C0G730": "10008",   # 南投 (Nantou)
-    "C0K330": "10009",   # 雲林 (Yunlin)
+    "C0F9A0": "10007",   # 彰化 (Changhua, realtime)
+    "467270": "10007",   # 彰化/田中 (historical C-B0024-001)
+    "C0G730": "10008",   # 南投 (Nantou, realtime)
+    "467650": "10008",   # 南投/日月潭 (historical C-B0024-001)
+    "C0K330": "10009",   # 雲林 (Yunlin, realtime)
+    "467290": "10009",   # 雲林/古坑 (historical C-B0024-001)
     # Southern Taiwan
-    "C0M790": "10010",   # 嘉義縣 (朴子站)
+    "C0M790": "10010",   # 嘉義縣 (朴子站, realtime)
     "467480": "10020",   # 嘉義市
     "467410": "67000",   # 臺南 (Tainan)
-    "467440": "64000",   # 高雄 (Kaohsiung)
+    "467440": "64000",   # 高雄 (Kaohsiung, realtime)
+    "467441": "64000",   # 高雄 (historical C-B0024-001)
     "467590": "10013",   # 屏東 (Pingtung / Hengchun)
     # Eastern Taiwan
     "467660": "10014",   # 臺東 (Taitung)
     "466990": "10015",   # 花蓮 (Hualien)
     # Offshore
-    "467300": "10016",   # 澎湖 (Penghu)
+    "467300": "10016",   # 澎湖/東吉島 (Penghu)
+    "467350": "10016",   # 澎湖 (historical C-B0024-001)
     "467110": "09020",   # 金門 (Kinmen)
     "467990": "09007",   # 連江 (Lienchiang / Matsu)
 }
 
 # CWA dataset IDs
 CWA_REALTIME_DATASET_ID = "O-A0003-001"    # 即時觀測（最新資料）
-CWA_HISTORICAL_DATASET_ID = "C-B0024-002"  # 歷史逐日氣候資料
+CWA_HISTORICAL_DATASET_ID = "C-B0024-001"  # 歷史逐日氣候資料（地面氣候日報）
 
 # 即時 dataset 只回傳最近的觀測值，超過此天數應改用歷史 dataset
 _REALTIME_CUTOFF_DAYS = 2
@@ -111,8 +120,13 @@ class CWAWeatherCollector:
         """Call CWA API and return the station-level observations list.
 
         Uses the realtime dataset (``O-A0003-001``) for recent dates (within
-        the last 2 days) and the historical dataset (``C-B0024-002``) for
-        older dates, passing ``dataDate`` so CWA returns the correct day.
+        the cutoff window) and the daily climate dataset (``C-B0024-001``)
+        as a fallback.
+
+        **Important**: C-B0024-001 does *not* support arbitrary historical
+        dates — it always returns the latest available day regardless of
+        ``dataDate``.  This method validates that the returned data actually
+        matches *target_date* and returns an empty list when it does not.
         """
         use_realtime = self._is_recent(target_date)
         dataset_id = CWA_REALTIME_DATASET_ID if use_realtime else CWA_HISTORICAL_DATASET_ID
@@ -121,10 +135,6 @@ class CWAWeatherCollector:
             "Authorization": self.api_key,
             "format": "JSON",
         }
-
-        if not use_realtime:
-            # Historical dataset requires an explicit date
-            params["dataDate"] = target_date.isoformat()
 
         url = f"{settings.CWA_API_BASE}/{dataset_id}"
         logger.debug(
@@ -136,27 +146,149 @@ class CWAWeatherCollector:
             resp.raise_for_status()
             payload = resp.json()
 
-            # Navigate the CWA response structure
             records = payload.get("records", {})
-            stations = records.get("Station", records.get("station", []))
 
-            # Historical dataset may nest data under different keys
-            if not stations:
-                stations = records.get("data", records.get("Data", []))
+            if use_realtime:
+                # Realtime: records.Station (list of station dicts)
+                stations = records.get("Station", records.get("station", []))
+                if not isinstance(stations, list):
+                    logger.warning(
+                        "Unexpected CWA response structure for %s (dataset=%s).",
+                        target_date, dataset_id,
+                    )
+                    return []
+                return stations
 
-            if not isinstance(stations, list):
+            # C-B0024-001: records.location (list of location dicts)
+            locations = records.get("location", [])
+            if not isinstance(locations, list) or not locations:
                 logger.warning(
-                    "Unexpected CWA response structure for %s (dataset=%s).",
-                    target_date, dataset_id,
+                    "No locations in CWA daily-climate response for %s.", target_date,
                 )
                 return []
-            return stations
+
+            # Validate: C-B0024-001 ignores dataDate and returns the latest
+            # available day.  Only proceed if that day matches target_date.
+            actual_date = self._extract_response_date(locations)
+            if actual_date and actual_date != target_date:
+                logger.warning(
+                    "CWA C-B0024-001 returned data for %s but target was %s. "
+                    "Historical backfill via API is not supported — "
+                    "the CWA open-data API only provides recent observations.",
+                    actual_date, target_date,
+                )
+                return []
+
+            return self._normalize_historical(locations, target_date)
+
         except requests.RequestException as exc:
             logger.error("HTTP error fetching CWA data for %s: %s", target_date, exc)
             return []
         except (ValueError, KeyError) as exc:
             logger.error("Error parsing CWA response for %s: %s", target_date, exc)
             return []
+
+    @staticmethod
+    def _extract_response_date(locations: List[Dict[str, Any]]) -> Optional[date]:
+        """Extract the actual observation date from a C-B0024-001 response."""
+        try:
+            daily = (
+                locations[0]
+                .get("stationObsStatistics", {})
+                .get("AirTemperature", {})
+                .get("daily", [])
+            )
+            if daily:
+                return datetime.strptime(daily[0]["Date"], "%Y-%m-%d").date()
+        except (IndexError, KeyError, ValueError):
+            pass
+        return None
+
+    # ------------------------------------------------------------------
+    # Historical data normalisation
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _normalize_historical(
+        locations: List[Dict[str, Any]], target_date: date,
+    ) -> List[Dict[str, Any]]:
+        """Convert C-B0024-001 location records into flat station dicts.
+
+        C-B0024-001 returns hourly observations and daily statistics per
+        station.  We aggregate hourly values (rainfall sum, humidity avg)
+        and use the daily statistics for temperature, producing a dict
+        that ``_extract_weather_elements()`` can process via its fallback
+        paths.
+        """
+        target_str = target_date.isoformat()
+        normalised: List[Dict[str, Any]] = []
+
+        for loc in locations:
+            station_info = loc.get("station", {})
+            station_id = station_info.get("StationID", "")
+
+            # --- daily temperature stats ---
+            stats = loc.get("stationObsStatistics", {})
+            temp_daily_list = stats.get("AirTemperature", {}).get("daily", [])
+
+            # Pick the entry matching target_date (API may return multiple)
+            temp_daily: Dict[str, Any] = {}
+            for entry in temp_daily_list:
+                if entry.get("Date", "") == target_str:
+                    temp_daily = entry
+                    break
+            if not temp_daily and temp_daily_list:
+                temp_daily = temp_daily_list[0]
+
+            mean_temp = temp_daily.get("Mean")
+            max_temp = temp_daily.get("Maximum")
+            min_temp = temp_daily.get("Minimum")
+
+            # --- aggregate hourly observations ---
+            obs_times = loc.get("stationObsTimes", {}).get("stationObsTime", [])
+            total_precip = 0.0
+            precip_count = 0
+            humidity_values: List[float] = []
+
+            for obs in obs_times:
+                elements = obs.get("weatherElements", {})
+                p = elements.get("Precipitation")
+                if p not in (None, "", "-999", "X", "T"):
+                    try:
+                        total_precip += float(p)
+                        precip_count += 1
+                    except (ValueError, TypeError):
+                        pass
+                h = elements.get("RelativeHumidity")
+                if h not in (None, "", "-999", "X"):
+                    try:
+                        humidity_values.append(float(h))
+                    except (ValueError, TypeError):
+                        pass
+
+            avg_humidity = (
+                sum(humidity_values) / len(humidity_values)
+                if humidity_values else None
+            )
+
+            # Build a flat dict using keys that _extract_weather_elements()
+            # picks up through its fallback chains.
+            normalised.append({
+                "StationId": station_id,
+                "WeatherElement": {
+                    "Mean": mean_temp,
+                    "Maximum": max_temp,
+                    "Minimum": min_temp,
+                    "Precipitation": total_precip if precip_count else None,
+                    "MeanRH": avg_humidity,
+                    # empty dicts so .get() calls don't fail on None
+                    "AirTemperature": {},
+                    "RelativeHumidity": {},
+                    "DailyExtreme": {},
+                    "Now": {},
+                },
+            })
+
+        return normalised
 
     @staticmethod
     def _extract_weather_elements(
@@ -182,56 +314,77 @@ class CWAWeatherCollector:
         weather = station.get("WeatherElement", station)
 
         # Temperature — try multiple paths for realtime / historical formats
-        temp_info = weather.get("AirTemperature", {})
-        temp_avg = _safe(temp_info.get("Average"))
-        temp_max = _safe(temp_info.get("Maximum"))
-        temp_min = _safe(temp_info.get("Minimum"))
+        # Realtime O-A0003-001: AirTemperature is a plain string ("18.3")
+        # Historical normalised: AirTemperature is an empty dict
+        temp_info = weather.get("AirTemperature")
+        if isinstance(temp_info, dict):
+            temp_avg = _safe(temp_info.get("Average"))
+            temp_max = _safe(temp_info.get("Maximum"))
+            temp_min = _safe(temp_info.get("Minimum"))
+        else:
+            # Realtime: AirTemperature is the current reading (use as avg)
+            temp_avg = _safe(temp_info)
+            temp_max = None
+            temp_min = None
 
         # Fallback: direct keys at top level or under DailyExtreme
         if temp_avg is None:
             temp_avg = _safe(weather.get("TEMP"))
         if temp_avg is None:
-            # Historical dataset: Mean/MeanTemperature
             temp_avg = _safe(weather.get("Mean"))
         if temp_avg is None:
             temp_avg = _safe(weather.get("MeanTemperature"))
 
         if temp_max is None:
-            daily_high = weather.get("DailyExtreme", {}).get("DailyHigh", {})
-            temp_max = _safe(daily_high.get("TemperatureInfo", {}).get("AirTemperature"))
+            de = weather.get("DailyExtreme")
+            if isinstance(de, dict):
+                daily_high = de.get("DailyHigh", {})
+                temp_max = _safe(daily_high.get("TemperatureInfo", {}).get("AirTemperature"))
         if temp_max is None:
             temp_max = _safe(weather.get("Maximum"))
         if temp_max is None:
             temp_max = _safe(weather.get("MaxTemperature"))
 
         if temp_min is None:
-            daily_low = weather.get("DailyExtreme", {}).get("DailyLow", {})
-            temp_min = _safe(daily_low.get("TemperatureInfo", {}).get("AirTemperature"))
+            de = weather.get("DailyExtreme")
+            if isinstance(de, dict):
+                daily_low = de.get("DailyLow", {})
+                temp_min = _safe(daily_low.get("TemperatureInfo", {}).get("AirTemperature"))
         if temp_min is None:
             temp_min = _safe(weather.get("Minimum"))
         if temp_min is None:
             temp_min = _safe(weather.get("MinTemperature"))
 
         # Rainfall — try multiple paths
-        precip_info = weather.get("Now", {}).get("Precipitation", {})
-        rainfall = _safe(precip_info.get("Accumulation"))
+        # Realtime: Now.Precipitation is a string ("1.0"), not a dict
+        now = weather.get("Now")
+        if isinstance(now, dict):
+            precip_val = now.get("Precipitation")
+            if isinstance(precip_val, dict):
+                rainfall = _safe(precip_val.get("Accumulation"))
+            else:
+                rainfall = _safe(precip_val)
+        else:
+            rainfall = None
         if rainfall is None:
             rainfall = _safe(weather.get("RAIN"))
         if rainfall is None:
             rainfall = _safe(weather.get("Precipitation"))
         if rainfall is None:
-            # Historical dataset: Rainfall / TotalRainfall
             rainfall = _safe(weather.get("Rainfall"))
         if rainfall is None:
             rainfall = _safe(weather.get("TotalRainfall"))
 
         # Humidity — try multiple paths
-        humidity_info = weather.get("RelativeHumidity", {})
-        humidity = _safe(humidity_info.get("Average"))
+        # Realtime: RelativeHumidity is a string ("85"), not a dict
+        humidity_val = weather.get("RelativeHumidity")
+        if isinstance(humidity_val, dict):
+            humidity = _safe(humidity_val.get("Average"))
+        else:
+            humidity = _safe(humidity_val)
         if humidity is None:
             humidity = _safe(weather.get("HUMD"))
         if humidity is None:
-            # Historical dataset: MeanRH / RH
             humidity = _safe(weather.get("MeanRH"))
         if humidity is None:
             humidity = _safe(weather.get("RH"))
