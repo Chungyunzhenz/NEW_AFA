@@ -27,6 +27,14 @@ export function getModelInfo({ crop, ...params } = {}) {
 }
 
 /**
+ * Fetch human-readable forecast summary.
+ * @param {Object} params - { crop, horizon }
+ */
+export function getForecastSummary({ crop, horizon = '1m' } = {}) {
+  return client.get(`/predictions/${crop}/summary`, { params: { horizon } });
+}
+
+/**
  * Trigger a model retrain job.
  * @param {Object} data - { crop, forceRetrain }
  */

@@ -191,6 +191,107 @@ def add_weather_features(
     return df
 
 
+# ------------------------------------------------------------------
+# Typhoon features
+# ------------------------------------------------------------------
+
+_INTENSITY_MAP = {"mild": 1, "moderate": 2, "severe": 3}
+
+
+def add_typhoon_features(
+    df: pd.DataFrame,
+    date_col: str,
+    typhoon_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Merge typhoon-derived features into a monthly time series.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Monthly data with a ``date_col`` column (datetime).
+    typhoon_df : pd.DataFrame
+        Typhoon events with at least ``warning_start``, ``warning_end``,
+        ``intensity`` columns.  Typically loaded from the ``typhoon_events``
+        DB table.
+
+    Features created
+    ----------------
+    - ``is_typhoon_month`` : 1 if any typhoon warning overlapped this month
+    - ``typhoon_count`` : number of typhoons in this month
+    - ``typhoon_intensity_max`` : max intensity score (mild=1, moderate=2, severe=3)
+    - ``days_since_typhoon`` : days since most recent typhoon ended (capped at 365)
+    - ``extreme_rainfall_flag`` : 1 if ``rainfall_mm`` > 300 (requires weather col)
+    - ``post_typhoon_1m`` : 1 if a typhoon ended 0-30 days ago
+    - ``post_typhoon_2m`` : 1 if a typhoon ended 31-60 days ago
+    """
+    df = df.copy()
+    dates = pd.to_datetime(df[date_col])
+
+    if typhoon_df is None or typhoon_df.empty:
+        for col in [
+            "is_typhoon_month", "typhoon_count", "typhoon_intensity_max",
+            "days_since_typhoon", "extreme_rainfall_flag",
+            "post_typhoon_1m", "post_typhoon_2m",
+        ]:
+            df[col] = 0
+        return df
+
+    ty = typhoon_df.copy()
+    ty["warning_start"] = pd.to_datetime(ty["warning_start"])
+    ty["warning_end"] = pd.to_datetime(ty["warning_end"])
+    ty["_intensity_score"] = ty["intensity"].map(_INTENSITY_MAP).fillna(0).astype(int)
+
+    is_typhoon = []
+    counts = []
+    intensity_max = []
+    days_since = []
+    post_1m = []
+    post_2m = []
+
+    for dt in dates:
+        month_start = dt.replace(day=1)
+        month_end = (month_start + pd.DateOffset(months=1)) - pd.Timedelta(days=1)
+
+        # Typhoons overlapping this month
+        overlapping = ty[
+            (ty["warning_start"] <= month_end) & (ty["warning_end"] >= month_start)
+        ]
+
+        is_typhoon.append(1 if len(overlapping) > 0 else 0)
+        counts.append(len(overlapping))
+        intensity_max.append(
+            int(overlapping["_intensity_score"].max()) if len(overlapping) > 0 else 0
+        )
+
+        # Days since most recent typhoon (looking backwards)
+        past = ty[ty["warning_end"] <= dt]
+        if len(past) > 0:
+            last_end = past["warning_end"].max()
+            gap = (dt - last_end).days
+            days_since.append(min(gap, 365))
+            post_1m.append(1 if gap <= 30 else 0)
+            post_2m.append(1 if 31 <= gap <= 60 else 0)
+        else:
+            days_since.append(365)
+            post_1m.append(0)
+            post_2m.append(0)
+
+    df["is_typhoon_month"] = is_typhoon
+    df["typhoon_count"] = counts
+    df["typhoon_intensity_max"] = intensity_max
+    df["days_since_typhoon"] = days_since
+    df["post_typhoon_1m"] = post_1m
+    df["post_typhoon_2m"] = post_2m
+
+    # Extreme rainfall flag (if rainfall column exists)
+    if "rainfall_mm" in df.columns:
+        df["extreme_rainfall_flag"] = (df["rainfall_mm"] > 300).astype(int)
+    else:
+        df["extreme_rainfall_flag"] = 0
+
+    return df
+
+
 # ====================================================================
 # Main entry point
 # ====================================================================
@@ -199,6 +300,7 @@ def build_features(
     df: pd.DataFrame,
     crop_config: Dict[str, Any],
     weather_df: Optional[pd.DataFrame] = None,
+    typhoon_df: Optional[pd.DataFrame] = None,
     date_col: str = "ds",
     value_col: str = "y",
     drop_na: bool = True,
@@ -217,6 +319,8 @@ def build_features(
         - ``peak_months`` : list[int] — months considered peak season
     weather_df : pd.DataFrame, optional
         Monthly weather data.  If provided, weather features are merged.
+    typhoon_df : pd.DataFrame, optional
+        Typhoon events.  If provided, typhoon features are added.
     date_col, value_col : str
         Column names in *df*.
     drop_na : bool
@@ -251,6 +355,9 @@ def build_features(
             temp_col="temp_avg",
             rain_col="rainfall_mm",
         )
+
+    if typhoon_df is not None and not typhoon_df.empty:
+        out = add_typhoon_features(out, date_col, typhoon_df)
 
     if drop_na:
         # Fill NaN in lag/yoy/rolling-std columns with 0 for early rows
@@ -291,6 +398,7 @@ def build_future_features(
     horizon_months: int,
     crop_config: Dict[str, Any],
     weather_df: Optional[pd.DataFrame] = None,
+    typhoon_df: Optional[pd.DataFrame] = None,
     date_col: str = "ds",
     value_col: str = "y",
 ) -> pd.DataFrame:
@@ -325,6 +433,7 @@ def build_future_features(
         combined,
         crop_config,
         weather_df=weather_df,
+        typhoon_df=typhoon_df,
         date_col=date_col,
         value_col=value_col,
         drop_na=False,  # keep the NaN target rows

@@ -16,6 +16,8 @@ venv/
 # Trained models
 backend/trained_models/*.pkl
 backend/trained_models/*.joblib
+trained_models/
+*.pkl
 
 # Node
 node_modules/

@@ -13,7 +13,10 @@ import {
   Tooltip,
   Legend,
   ReferenceLine,
+  ReferenceArea,
 } from 'recharts';
+import ExportButton from '../components/common/ExportButton';
+import SeasonalCompareChart from '../components/charts/SeasonalChart';
 import useFilterStore from '../stores/useFilterStore';
 import useMapStore from '../stores/useMapStore';
 import usePredictionStore from '../stores/usePredictionStore';
@@ -27,7 +30,13 @@ import RecentAlerts from '../components/dashboard/RecentAlerts';
 import TimeSeriesChart from '../components/charts/TimeSeriesChart';
 import TaiwanMap from '../components/map/TaiwanMap';
 import ForecastPanel from '../components/predictions/ForecastPanel';
+import ForecastSummary from '../components/predictions/ForecastSummary';
 import ModelInfoPanel from '../components/predictions/ModelInfoPanel';
+import TyphoonSimulator from '../components/predictions/TyphoonSimulator';
+import RecentPredictionPanel from '../components/predictions/RecentPredictionPanel';
+import FeatureImportanceChart from '../components/charts/FeatureImportanceChart';
+import DataQualityPanel from '../components/data/DataQualityPanel';
+import useTyphoonData from '../hooks/useTyphoonData';
 import UploadWizard from '../components/upload/UploadWizard';
 import TrafficLightPanel from '../components/dashboard/TrafficLightPanel';
 import { METRICS, METRIC_LABELS, GRANULARITY_LABELS } from '../utils/constants';
@@ -46,6 +55,34 @@ function SectionHeader({ id, title, subtitle }) {
   );
 }
 
+function CollapsibleSection({ title, subtitle, children, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between px-6 py-4 text-left hover:bg-gray-50 transition-colors"
+      >
+        <div>
+          <h3 className="text-base font-semibold text-gray-800">{title}</h3>
+          {subtitle && <p className="mt-0.5 text-xs text-gray-400">{subtitle}</p>}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-400">{open ? '收起' : '展開'}</span>
+          <svg className={`h-5 w-5 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+          </svg>
+        </div>
+      </button>
+      {open && (
+        <div className="border-t border-gray-100 p-6 space-y-6">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ============================================================ */
 /*  Dashboard: County detail panel                               */
 /* ============================================================ */
@@ -59,6 +96,9 @@ function CountyDetailPanel({ county, mapData, onClose }) {
     [mapData, county],
   );
   if (!countyData) return null;
+
+  const hasData = countyData.avgPrice > 0 || countyData.volume > 0;
+
   return (
     <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between">
@@ -67,11 +107,23 @@ function CountyDetailPanel({ county, mapData, onClose }) {
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
       </div>
-      <dl className="mt-3 space-y-2 text-sm">
-        <div className="flex justify-between"><dt className="text-gray-500">平均價格</dt><dd className="font-medium tabular-nums text-gray-800">NT$ {(countyData.avgPrice ?? 0).toLocaleString('zh-TW', { maximumFractionDigits: 1 })}</dd></div>
-        <div className="flex justify-between"><dt className="text-gray-500">交易量</dt><dd className="font-medium tabular-nums text-gray-800">{(countyData.volume ?? 0).toLocaleString('zh-TW')} 公斤</dd></div>
-        <div className="flex justify-between"><dt className="text-gray-500">產量</dt><dd className="font-medium tabular-nums text-gray-800">{countyData.productionTonnes ? `${countyData.productionTonnes.toLocaleString('zh-TW')} 公噸` : '—'}</dd></div>
-      </dl>
+      {hasData ? (
+        <dl className="mt-3 space-y-2 text-sm">
+          <div className="flex justify-between"><dt className="text-gray-500">平均價格</dt><dd className="font-medium tabular-nums text-gray-800">NT$ {(countyData.avgPrice ?? 0).toLocaleString('zh-TW', { maximumFractionDigits: 1 })}</dd></div>
+          <div className="flex justify-between"><dt className="text-gray-500">交易量</dt><dd className="font-medium tabular-nums text-gray-800">{(countyData.volume ?? 0).toLocaleString('zh-TW')} 公斤</dd></div>
+          {countyData.productionTonnes > 0 && (
+            <div className="flex justify-between"><dt className="text-gray-500">產量</dt><dd className="font-medium tabular-nums text-gray-800">{countyData.productionTonnes.toLocaleString('zh-TW')} 公噸</dd></div>
+          )}
+          {countyData.tempAvg != null && (
+            <div className="flex justify-between border-t border-gray-100 pt-2 mt-2"><dt className="text-gray-500">平均氣溫</dt><dd className="font-medium tabular-nums text-blue-600">{countyData.tempAvg}°C</dd></div>
+          )}
+          {countyData.rainfallMm != null && (
+            <div className="flex justify-between"><dt className="text-gray-500">近月降雨</dt><dd className="font-medium tabular-nums text-blue-600">{countyData.rainfallMm.toLocaleString('zh-TW')} mm</dd></div>
+          )}
+        </dl>
+      ) : (
+        <p className="mt-3 text-sm text-gray-400">此縣市暫無交易紀錄</p>
+      )}
     </div>
   );
 }
@@ -108,7 +160,7 @@ function useAlerts(tradingData) {
 /* ============================================================ */
 function PriceVolumeChart({ data, loading }) {
   const chartData = useMemo(
-    () => (data || []).map((d) => ({ date: d.date ?? d.period ?? d.month, price: d.value ?? d.avgPrice ?? d.avg_price ?? 0, volume: d.volume ?? d.trading_volume ?? 0 })).sort((a, b) => String(a.date ?? '').localeCompare(String(b.date ?? ''))),
+    () => (data || []).map((d) => ({ date: d.period, price: d.price_avg ?? 0, volume: d.volume_total ?? 0 })).sort((a, b) => String(a.date ?? '').localeCompare(String(b.date ?? ''))),
     [data],
   );
   if (loading) return <div className="flex h-80 items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" /></div>;
@@ -137,12 +189,12 @@ function SeasonalChart({ data, cropConfig }) {
     if (!data || data.length === 0) return [];
     const byMonth = {};
     for (const d of data) {
-      const dateStr = d.date ?? d.period ?? d.month;
+      const dateStr = d.period;
       if (!dateStr) continue;
       const month = new Date(dateStr).getMonth() + 1;
       if (!byMonth[month]) byMonth[month] = { prices: [], volumes: [] };
-      const price = d.value ?? d.avgPrice ?? d.avg_price ?? 0;
-      const volume = d.volume ?? d.trading_volume ?? 0;
+      const price = d.price_avg ?? 0;
+      const volume = d.volume_total ?? 0;
       if (price > 0) byMonth[month].prices.push(price);
       if (volume > 0) byMonth[month].volumes.push(volume);
     }
@@ -184,8 +236,8 @@ function MarketComparison({ data }) {
       const market = d.market ?? d.marketName ?? d.market_name;
       if (!market) continue;
       if (!byMarket[market]) byMarket[market] = { prices: [], volumes: [] };
-      const price = d.avgPrice ?? d.avg_price ?? d.value ?? 0;
-      const vol = d.volume ?? d.trading_volume ?? 0;
+      const price = d.price_avg ?? 0;
+      const vol = d.volume_total ?? 0;
       if (price > 0) byMarket[market].prices.push(price);
       if (vol > 0) byMarket[market].volumes.push(vol);
     }
@@ -267,9 +319,9 @@ function TradingDataTable({ data, loading, page, pageSize, totalCount, onPageCha
 /* ============================================================ */
 /*  Forecast: Combined chart                                     */
 /* ============================================================ */
-function ForecastChart({ historicalData, predictions, loading }) {
+function ForecastChart({ historicalData, predictions, loading, typhoonEvents = [] }) {
   const chartData = useMemo(() => {
-    const hist = (historicalData || []).map((d) => ({ date: d.date ?? d.period ?? d.month, actual: d.value ?? d.avgPrice ?? d.avg_price ?? null, predicted: null, ciUpper: null, ciLower: null }));
+    const hist = (historicalData || []).map((d) => ({ date: d.period, actual: d.price_avg ?? null, predicted: null, ciUpper: null, ciLower: null }));
     const pred = (Array.isArray(predictions) ? predictions : []).map((d) => ({ date: d.date ?? d.forecastDate ?? d.forecast_date, actual: null, predicted: d.value ?? d.predicted ?? d.forecast_value ?? null, ciUpper: d.ciUpper ?? d.ci_upper ?? null, ciLower: d.ciLower ?? d.ci_lower ?? null }));
     const merged = [...hist];
     if (hist.length > 0 && pred.length > 0) { const lastActual = hist[hist.length - 1]; merged.push({ ...lastActual, predicted: lastActual.actual, ciUpper: lastActual.actual, ciLower: lastActual.actual }); }
@@ -277,7 +329,7 @@ function ForecastChart({ historicalData, predictions, loading }) {
     return merged;
   }, [historicalData, predictions]);
 
-  const boundaryDate = useMemo(() => { if (!historicalData?.length) return null; const last = historicalData[historicalData.length - 1]; return last?.date ?? last?.period ?? last?.month ?? null; }, [historicalData]);
+  const boundaryDate = useMemo(() => { if (!historicalData?.length) return null; const last = historicalData[historicalData.length - 1]; return last?.period ?? null; }, [historicalData]);
 
   if (loading) return <div className="flex h-96 items-center justify-center"><div className="flex flex-col items-center gap-3"><div className="h-10 w-10 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" /><p className="text-sm text-gray-500">載入預測資料中...</p></div></div>;
   if (!chartData.length) return <div className="flex h-96 items-center justify-center text-sm text-gray-400">請選擇作物以查看預測圖表</div>;
@@ -296,6 +348,113 @@ function ForecastChart({ historicalData, predictions, loading }) {
         {boundaryDate && <ReferenceLine x={boundaryDate} stroke="#9ca3af" strokeDasharray="4 4" label={{ value: '預測起點', position: 'top', style: { fontSize: 11, fill: '#9ca3af' } }} />}
         <Line type="monotone" dataKey="actual" stroke="#3b82f6" strokeWidth={2} dot={false} activeDot={{ r: 4, fill: '#3b82f6' }} name="actual" connectNulls={false} />
         <Line type="monotone" dataKey="predicted" stroke="#6366f1" strokeWidth={2} strokeDasharray="6 3" dot={false} activeDot={{ r: 4, fill: '#6366f1' }} name="predicted" connectNulls={false} />
+        {typhoonEvents.map((evt, idx) => (
+          <ReferenceArea
+            key={`typhoon-${idx}`}
+            x1={evt.startDate ?? evt.start_date}
+            x2={evt.endDate ?? evt.end_date}
+            fill="#ef444420"
+            stroke="#ef444440"
+            strokeDasharray="3 3"
+            label={{ value: evt.name ?? evt.typhoonName ?? `颱風${idx + 1}`, position: 'top', style: { fontSize: 11, fill: '#ef4444', fontWeight: 600 } }}
+          />
+        ))}
+      </ComposedChart>
+    </ResponsiveContainer>
+  );
+}
+
+/* ============================================================ */
+/*  Forecast: Price-Volume dual-axis compare chart               */
+/* ============================================================ */
+function PriceVolumeCompare({ data }) {
+  const chartData = useMemo(() => {
+    if (!data || data.length === 0) return [];
+    return data
+      .map((d) => ({
+        date: d.period,
+        price_avg: d.price_avg ?? 0,
+        volume: d.volume_total ?? 0,
+      }))
+      .sort((a, b) => String(a.date ?? '').localeCompare(String(b.date ?? '')));
+  }, [data]);
+
+  if (!chartData.length) {
+    return (
+      <div className="flex h-[300px] items-center justify-center text-sm text-gray-400">
+        暫無價量資料
+      </div>
+    );
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={300}>
+      <ComposedChart data={chartData} margin={{ top: 8, right: 24, left: 8, bottom: 8 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+        <XAxis
+          dataKey="date"
+          tickFormatter={(v) => formatDate(v, 'MM/dd')}
+          tick={{ fontSize: 12, fill: '#6b7280' }}
+          tickLine={false}
+          axisLine={{ stroke: '#d1d5db' }}
+          minTickGap={40}
+        />
+        <YAxis
+          yAxisId="price"
+          orientation="left"
+          tick={{ fontSize: 12, fill: '#3b82f6' }}
+          tickFormatter={(v) => `$${formatNumber(v)}`}
+          tickLine={false}
+          axisLine={false}
+          label={{ value: '平均價格', angle: -90, position: 'insideLeft', style: { fontSize: 12, fill: '#3b82f6' } }}
+        />
+        <YAxis
+          yAxisId="volume"
+          orientation="right"
+          tick={{ fontSize: 12, fill: '#8b5cf6' }}
+          tickFormatter={(v) => formatNumber(v)}
+          tickLine={false}
+          axisLine={false}
+          label={{ value: '交易量', angle: 90, position: 'insideRight', style: { fontSize: 12, fill: '#8b5cf6' } }}
+        />
+        <Tooltip
+          content={({ active, payload, label }) => {
+            if (!active || !payload?.length) return null;
+            return (
+              <div className="rounded-lg border border-gray-200 bg-white p-3 text-sm shadow-lg">
+                <p className="mb-1 font-medium text-gray-700">{formatDate(label)}</p>
+                {payload.map((p) => (
+                  <p key={p.dataKey} style={{ color: p.color }}>
+                    {p.dataKey === 'price_avg' ? '平均價格' : '交易量'}:{' '}
+                    {p.dataKey === 'price_avg' ? formatCurrency(p.value, 1) : formatNumber(p.value)}
+                  </p>
+                ))}
+              </div>
+            );
+          }}
+        />
+        <Legend
+          wrapperStyle={{ fontSize: 13 }}
+          formatter={(v) => (v === 'price_avg' ? '平均價格' : '交易量')}
+        />
+        <Bar
+          yAxisId="volume"
+          dataKey="volume"
+          fill="#8b5cf6"
+          opacity={0.35}
+          radius={[2, 2, 0, 0]}
+          name="volume"
+        />
+        <Line
+          yAxisId="price"
+          type="monotone"
+          dataKey="price_avg"
+          stroke="#3b82f6"
+          strokeWidth={2}
+          dot={false}
+          activeDot={{ r: 4 }}
+          name="price_avg"
+        />
       </ComposedChart>
     </ResponsiveContainer>
   );
@@ -400,6 +559,7 @@ function parseSyncStatusResponse(data) {
 /* ============================================================ */
 export default function UnifiedPage() {
   const { selectedCrop, selectedCropLabel, dateRange, metric, granularity } = useFilterStore();
+  const setMetric = useFilterStore((s) => s.setMetric);
   const { selectedCounty, mapLayer } = useMapStore();
   const clearSelection = useMapStore((s) => s.clearSelection);
   const setGranularity = useFilterStore((s) => s.setGranularity);
@@ -414,13 +574,13 @@ export default function UnifiedPage() {
     if (!tradingData || tradingData.length === 0) return null;
     const latest = tradingData[tradingData.length - 1];
     const previous = tradingData.length > 1 ? tradingData[tradingData.length - 2] : null;
-    const latestPrice = latest?.value ?? latest?.avgPrice ?? latest?.avg_price ?? latest?.price_avg ?? 0;
-    const prevPrice = previous?.value ?? previous?.avgPrice ?? previous?.avg_price ?? previous?.price_avg ?? 0;
+    const latestPrice = latest?.price_avg ?? 0;
+    const prevPrice = previous?.price_avg ?? 0;
     const priceChange = prevPrice > 0 ? (latestPrice - prevPrice) / prevPrice : 0;
-    const monthlyVolume = tradingData.slice(-30).reduce((sum, d) => sum + (d.volume ?? d.trading_volume ?? d.volume_total ?? 0), 0);
-    const prevMonthVolume = tradingData.slice(-60, -30).reduce((sum, d) => sum + (d.volume ?? d.trading_volume ?? d.volume_total ?? 0), 0);
+    const monthlyVolume = tradingData.slice(-30).reduce((sum, d) => sum + (d.volume_total ?? 0), 0);
+    const prevMonthVolume = tradingData.slice(-60, -30).reduce((sum, d) => sum + (d.volume_total ?? 0), 0);
     const volumeChange = prevMonthVolume > 0 ? (monthlyVolume - prevMonthVolume) / prevMonthVolume : 0;
-    return { latestPrice, priceChange, monthlyVolume, yearlyVolume: tradingData.reduce((s, d) => s + (d.volume ?? d.trading_volume ?? d.volume_total ?? 0), 0), volumeChange, yearlyChange: 0 };
+    return { latestPrice, priceChange, monthlyVolume, yearlyVolume: tradingData.reduce((s, d) => s + (d.volume_total ?? 0), 0), volumeChange, yearlyChange: 0 };
   }, [tradingData]);
 
   const topMarkets = useMemo(() => {
@@ -429,7 +589,7 @@ export default function UnifiedPage() {
     return mapData.map((d) => ({ name: d.countyName ?? d.countyId ?? '-', avgPrice: d.avgPrice ?? 0, volume: d.volume ?? 0, share: totalVolume > 0 ? (d.volume ?? 0) / totalVolume : 0 })).sort((a, b) => b.volume - a.volume);
   }, [mapData]);
 
-  const chartData = useMemo(() => (tradingData || []).map((d) => ({ date: d.date ?? d.period ?? d.month, value: d.value ?? d[metric] ?? d.avgPrice ?? d.avg_price ?? d.price_avg ?? 0 })), [tradingData, metric]);
+  const chartData = useMemo(() => (tradingData || []).map((d) => ({ date: d.period, value: d[metric] ?? d.price_avg ?? 0 })), [tradingData, metric]);
 
   /* --- Trading page data --- */
   const [tradingPage, setTradingPage] = useState(1);
@@ -440,9 +600,10 @@ export default function UnifiedPage() {
 
   /* --- Forecast data --- */
   const [horizon, setHorizon] = useState('7d');
-  const horizonOptions = [{ value: '7d', label: '7 天' }, { value: '14d', label: '14 天' }, { value: '30d', label: '30 天' }];
+  const horizonOptions = [{ value: '1m', label: '1 個月' }, { value: '3m', label: '3 個月' }, { value: '6m', label: '6 個月' }];
   const { predictions, forecast, modelInfo, loading: predLoading, error: predError } = usePredictions({ horizon });
   const { data: historicalData, loading: histLoading } = useTradingData();
+  const { events: typhoonEvents } = useTyphoonData();
 
   /* --- Data management state --- */
   const { retrainStatus, requestRetrain } = usePredictionStore();
@@ -503,7 +664,8 @@ export default function UnifiedPage() {
       {/* ============================================ */}
       {/*  § 總覽                                      */}
       {/* ============================================ */}
-      <SectionHeader id="section-overview" title="儀表板總覽" subtitle="台灣農產品各縣市交易與生產數據視覺化" />
+      <SummaryCards data={summaryData} loading={isLoading} />
+      <p className="text-xs text-gray-400 mt-1 px-1">數據根據您選擇的日期範圍計算。綠色箭頭表示較上期上漲，紅色箭頭表示下跌。</p>
 
       {globalError && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
@@ -514,110 +676,169 @@ export default function UnifiedPage() {
         </div>
       )}
 
-      <SummaryCards data={summaryData} loading={isLoading} />
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        <div className="space-y-6 lg:col-span-7">
-          <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-            <TimeSeriesChart data={chartData} metric={metric} title={`${selectedCropLabel || selectedCrop || '農產品'}${METRIC_LABELS[metric] ?? ''}趨勢`} height={360} color="#3b82f6" />
-          </div>
-          <TopMarketsTable markets={topMarkets} loading={isLoading} />
-          <RecentAlerts alerts={alerts} loading={isLoading} maxHeight={300} />
-        </div>
-        <div className="order-first space-y-4 lg:order-none lg:col-span-5 lg:sticky lg:top-28 lg:self-start">
-          <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-700">各縣市{METRIC_LABELS[metric] ?? '數據'}分佈</h3>
-              <span className="text-xs text-gray-400">{dateRange.startDate} ~ {dateRange.endDate}</span>
+      <CollapsibleSection title="儀表板總覽" subtitle="各縣市交易與天氣數據視覺化。地圖顏色越深代表價格越高，灰色表示無交易紀錄。點擊縣市查看詳情。">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+          <div className="space-y-6 lg:col-span-7">
+            <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+              <TimeSeriesChart data={chartData} metric={metric} title={`${selectedCropLabel || selectedCrop || '農產品'}${METRIC_LABELS[metric] ?? ''}趨勢`} height={360} color="#3b82f6" />
             </div>
-            <TaiwanMap data={mapData} metric={metric} />
+            <TopMarketsTable markets={topMarkets} loading={isLoading} />
+            <RecentAlerts alerts={alerts} loading={isLoading} maxHeight={300} />
           </div>
-          {selectedCounty && <CountyDetailPanel county={selectedCounty} mapData={mapData} onClose={clearSelection} />}
+          <div className="order-first space-y-4 lg:order-none lg:col-span-5 lg:sticky lg:top-28 lg:self-start">
+            <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between flex-wrap gap-2">
+                <h3 className="text-sm font-semibold text-gray-700">各縣市數據分佈</h3>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center rounded-lg bg-gray-100 p-0.5">
+                    {[
+                      { key: 'avg_price', label: '價格' },
+                      { key: 'trading_volume', label: '交易量' },
+                    ].map((opt) => (
+                      <button key={opt.key} onClick={() => setMetric(opt.key)} className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${metric === opt.key ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-600 hover:text-gray-800'}`}>{opt.label}</button>
+                    ))}
+                  </div>
+                  <span className="text-xs text-gray-400">{dateRange.startDate} ~ {dateRange.endDate}</span>
+                </div>
+              </div>
+              <TaiwanMap data={mapData} metric={metric} />
+              <p className="mt-2 text-xs text-gray-400 text-center">點擊縣市查看詳細資訊 | 顏色越深代表數值越高 | 灰色為無資料地區</p>
+            </div>
+            {selectedCounty && <CountyDetailPanel county={selectedCounty} mapData={mapData} onClose={clearSelection} />}
+          </div>
         </div>
-      </div>
+      </CollapsibleSection>
 
       {/* ============================================ */}
-      {/*  § 交易分析                                   */}
+      {/*  § 交易分析（可摺疊）                         */}
       {/* ============================================ */}
-      <SectionHeader id="section-trading" title="交易分析" subtitle="農產品市場交易數據分析與趨勢" />
-
-      <div className="flex items-center justify-end">
-        <div className="flex items-center rounded-lg bg-gray-100 p-0.5">
-          {Object.entries(GRANULARITY_LABELS).map(([key, label]) => (
-            <button key={key} onClick={() => setGranularity(key)} className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${granularity === key ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-600 hover:text-gray-800'}`}>{label}</button>
-          ))}
+      <CollapsibleSection title="交易分析" subtitle="農產品市場交易數據分析與趨勢（點擊展開查看詳情）">
+        <div className="flex items-center justify-end">
+          <div className="flex items-center rounded-lg bg-gray-100 p-0.5">
+            {Object.entries(GRANULARITY_LABELS).map(([key, label]) => (
+              <button key={key} onClick={() => setGranularity(key)} className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${granularity === key ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-600 hover:text-gray-800'}`}>{label}</button>
+            ))}
+          </div>
         </div>
-      </div>
 
-      <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-        <h3 className="mb-4 text-base font-semibold text-gray-800">價量走勢</h3>
-        <PriceVolumeChart data={tradingData} loading={tradingLoading} />
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-          <h3 className="mb-4 text-base font-semibold text-gray-800">季節性分析{cropConfig?.seasonality?.harvestSeason && <span className="ml-2 text-sm font-normal text-gray-400">採收期: {cropConfig.seasonality.harvestSeason}</span>}</h3>
-          <SeasonalChart data={tradingData} cropConfig={cropConfig} />
+          <h3 className="mb-4 text-base font-semibold text-gray-800">價量走勢</h3>
+          <PriceVolumeChart data={tradingData} loading={tradingLoading} />
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+            <h3 className="mb-4 text-base font-semibold text-gray-800">季節性分析{cropConfig?.seasonality?.harvestSeason && <span className="ml-2 text-sm font-normal text-gray-400">採收期: {cropConfig.seasonality.harvestSeason}</span>}</h3>
+            <SeasonalChart data={tradingData} cropConfig={cropConfig} />
+          </div>
+          <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+            <h3 className="mb-4 text-base font-semibold text-gray-800">市場比較</h3>
+            <MarketComparison data={tradingData} />
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-gray-100 bg-white shadow-sm">
+          <div className="border-b border-gray-100 px-5 py-4">
+            <h3 className="text-base font-semibold text-gray-800">交易資料明細</h3>
+            <p className="mt-0.5 text-xs text-gray-400">{selectedCrop ?? '全部作物'}的交易紀錄</p>
+          </div>
+          <TradingDataTable data={tableData} loading={tableLoading} page={tradingPage} pageSize={tradingPageSize} totalCount={tableTotalCount} onPageChange={handleTradingPageChange} />
+        </div>
+      </CollapsibleSection>
+
+      {/* ============================================ */}
+      {/*  § 預測摘要（直接顯示）                       */}
+      {/* ============================================ */}
+      <ForecastSummary horizon={horizon} />
+      <p className="text-xs text-gray-400 mt-1 px-1">預測基於歷史交易資料、天氣資料及颱風事件，使用 Prophet、SARIMA、XGBoost 三模型集成預測。</p>
+
+      {/* ============================================ */}
+      {/*  § 預測結果詳情（可摺疊）                     */}
+      {/* ============================================ */}
+      <CollapsibleSection title="預測結果" subtitle="AI 模型價格預測圖表。可切換 1/3/6 個月預測期間，圖表中藍線為歷史實際價格，虛線為模型預測。">
+        <div className="flex items-center justify-end gap-2">
+          <span className="text-sm text-gray-500">預測期間:</span>
+          <div className="flex items-center rounded-lg bg-gray-100 p-0.5">
+            {horizonOptions.map((opt) => (
+              <button key={opt.value} onClick={() => setHorizon(opt.value)} className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${horizon === opt.value ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-600 hover:text-gray-800'}`}>{opt.label}</button>
+            ))}
+          </div>
+          <ExportButton url={`/export/predictions/${selectedCrop}`} filename={`${selectedCrop}_predictions.csv`} label="匯出預測" />
+        </div>
+
+        <ForecastPanel forecast={forecast ? {
+          value: forecast.forecast_value ?? forecast.value,
+          ciLower: forecast.lower_bound ?? forecast.ciLower,
+          ciUpper: forecast.upper_bound ?? forecast.ciUpper,
+          forecastDate: forecast.forecast_date ?? forecast.forecastDate,
+          generatedAt: forecast.generated_at ?? forecast.generatedAt,
+          modelName: forecast.model_name ?? forecast.modelName,
+          horizon: forecast.horizon_label ?? forecast.horizon,
+          cropName: forecast.crop_key ?? forecast.cropName,
+        } : null} loading={predLoading} />
+
+        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h3 className="mb-4 text-base font-semibold text-gray-800">歷史價格與預測走勢</h3>
+          <ForecastChart historicalData={historicalData} predictions={predictions} loading={predLoading || histLoading} typhoonEvents={typhoonEvents} />
+        </div>
+
+        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h3 className="mb-4 text-base font-semibold text-gray-800">價量雙軸比較</h3>
+          <PriceVolumeCompare data={historicalData} />
+        </div>
+
+        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h3 className="mb-4 text-base font-semibold text-gray-800">季節性年度比較</h3>
+          <SeasonalCompareChart data={(historicalData || []).map((d) => ({ date: d.period, value: d.price_avg ?? 0 }))} />
+        </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="颱風情境模擬" subtitle="根據歷史颱風對農產品價格的影響，模擬不同強度颱風來襲時的價格預測調整。">
+        <TyphoonSimulator />
+      </CollapsibleSection>
+
+      <CollapsibleSection title="近期資料快速預測" subtitle="將最近的實際交易均價與模型預測做比對，評估預測準確度。">
+        <RecentPredictionPanel />
+      </CollapsibleSection>
+
+      {/* ============================================ */}
+      {/*  § 進階分析（可摺疊）                         */}
+      {/* ============================================ */}
+      <CollapsibleSection title="進階分析" subtitle="模型效能指標（MAE/RMSE/MAPE）和影響預測的關鍵因素排名。紅色=颱風因素、藍色=天氣因素、黃色=季節因素。">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+            <h3 className="mb-4 text-base font-semibold text-gray-800">模型效能比較</h3>
+            <ModelComparisonChart modelInfo={modelInfo} />
+          </div>
+          <ModelInfoPanel modelInfo={modelInfo} loading={predLoading} />
         </div>
         <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-          <h3 className="mb-4 text-base font-semibold text-gray-800">市場比較</h3>
-          <MarketComparison data={tradingData} />
+          <h3 className="mb-4 text-base font-semibold text-gray-800">特徵重要性分析</h3>
+          <p className="mb-3 text-xs text-gray-400">模型判斷各特徵對預測的影響程度</p>
+          <FeatureImportanceChart />
         </div>
-      </div>
-
-      <div className="rounded-xl border border-gray-100 bg-white shadow-sm">
-        <div className="border-b border-gray-100 px-5 py-4">
-          <h3 className="text-base font-semibold text-gray-800">交易資料明細</h3>
-          <p className="mt-0.5 text-xs text-gray-400">{selectedCrop ?? '全部作物'}的交易紀錄</p>
-        </div>
-        <TradingDataTable data={tableData} loading={tableLoading} page={tradingPage} pageSize={tradingPageSize} totalCount={tableTotalCount} onPageChange={handleTradingPageChange} />
-      </div>
+      </CollapsibleSection>
 
       {/* ============================================ */}
-      {/*  § 預測結果                                   */}
+      {/*  § 資料管理（可摺疊）                         */}
       {/* ============================================ */}
-      <SectionHeader id="section-forecast" title="預測結果" subtitle="AI 模型價格與產量預測" />
-
-      <div className="flex items-center justify-end gap-2">
-        <span className="text-sm text-gray-500">預測期間:</span>
-        <div className="flex items-center rounded-lg bg-gray-100 p-0.5">
-          {horizonOptions.map((opt) => (
-            <button key={opt.value} onClick={() => setHorizon(opt.value)} className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${horizon === opt.value ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-600 hover:text-gray-800'}`}>{opt.label}</button>
-          ))}
+      <CollapsibleSection title="資料管理" subtitle="檢視資料覆蓋率、同步狀態，匯出 CSV 或下載 SQLite 資料庫供政府單位使用。">
+        <DataQualityPanel />
+        <SyncStatusCard syncInfo={syncInfo} onSync={handleSync} syncing={syncing} />
+        <div className="flex flex-wrap items-center gap-2">
+          <ExportButton url={`/export/historical/${selectedCrop}`} filename={`${selectedCrop}_historical.csv`} label="匯出歷史" />
+          <ExportButton url="/export/database" filename="agriculture.db" label="下載資料庫" format="SQLite" />
         </div>
-      </div>
-
-      <ForecastPanel forecast={forecast} loading={predLoading} />
-
-      <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-        <h3 className="mb-4 text-base font-semibold text-gray-800">歷史價格與預測走勢</h3>
-        <ForecastChart historicalData={historicalData} predictions={predictions} loading={predLoading || histLoading} />
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-          <h3 className="mb-4 text-base font-semibold text-gray-800">模型效能比較</h3>
-          <ModelComparisonChart modelInfo={modelInfo} />
+        <div className="rounded-xl border border-gray-100 bg-white shadow-sm">
+          <div className="border-b border-gray-100 px-5 py-4">
+            <h3 className="text-base font-semibold text-gray-800">資料涵蓋範圍</h3>
+            <p className="mt-0.5 text-xs text-gray-400">各作物交易與產量記錄數量</p>
+          </div>
+          <DataCoverageTable crops={crops} loading={cropsLoading} />
         </div>
-        <ModelInfoPanel modelInfo={modelInfo} loading={predLoading} />
-      </div>
+        <RetrainSection onRetrain={handleRetrain} retrainStatus={retrainStatus} />
 
-      {/* ============================================ */}
-      {/*  § 資料管理                                   */}
-      {/* ============================================ */}
-      <SectionHeader id="section-data" title="資料管理" subtitle="管理資料同步、匯入與模型訓練" />
-
-      <SyncStatusCard syncInfo={syncInfo} onSync={handleSync} syncing={syncing} />
-
-      <div className="rounded-xl border border-gray-100 bg-white shadow-sm">
-        <div className="border-b border-gray-100 px-5 py-4">
-          <h3 className="text-base font-semibold text-gray-800">資料涵蓋範圍</h3>
-          <p className="mt-0.5 text-xs text-gray-400">各作物交易與產量記錄數量</p>
-        </div>
-        <DataCoverageTable crops={crops} loading={cropsLoading} />
-      </div>
-
-      <RetrainSection onRetrain={handleRetrain} retrainStatus={retrainStatus} />
+      </CollapsibleSection>
 
       {/* Upload wizard - collapsible */}
       <div className="rounded-xl border border-gray-100 bg-white shadow-sm">

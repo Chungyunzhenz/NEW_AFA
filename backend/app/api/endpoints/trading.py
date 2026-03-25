@@ -201,12 +201,42 @@ def get_trading_by_county(
 
     rows = query.all()
 
+    # Fetch latest weather data per county
+    from ...models.weather import WeatherData
+    weather_query = (
+        db.query(
+            WeatherData.county_id,
+            func.avg(WeatherData.temp_avg).label("temp_avg"),
+            func.sum(WeatherData.rainfall_mm).label("rainfall_mm"),
+        )
+        .filter(WeatherData.county_id.isnot(None))
+    )
+    # Use the most recent month of weather data
+    latest_weather_date = db.query(func.max(WeatherData.observation_date)).scalar()
+    if latest_weather_date:
+        from datetime import timedelta as td
+        weather_query = weather_query.filter(
+            WeatherData.observation_date >= latest_weather_date - td(days=30)
+        )
+    weather_query = weather_query.group_by(WeatherData.county_id)
+    weather_rows = weather_query.all()
+    weather_map = {
+        r.county_id: {"temp_avg": round(r.temp_avg, 1) if r.temp_avg is not None else None,
+                      "rainfall_mm": round(r.rainfall_mm, 1) if r.rainfall_mm is not None else None}
+        for r in weather_rows
+    }
+
+    # Build county_code -> county_id lookup
+    county_lookup = {c.county_code: c.id for c in db.query(County).all()}
+
     return [
         TradingByCounty(
             county_code=r.county_code,
             county_name_zh=r.county_name_zh,
             avg_price=round(r.avg_price, 2) if r.avg_price else 0.0,
             volume=round(r.volume, 2) if r.volume else 0.0,
+            temp_avg=weather_map.get(county_lookup.get(r.county_code), {}).get("temp_avg"),
+            rainfall_mm=weather_map.get(county_lookup.get(r.county_code), {}).get("rainfall_mm"),
         )
         for r in rows
     ]

@@ -3,14 +3,15 @@ from datetime import date
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from ...database import get_db
 from ...models.crop import Crop
-from ...models.region import County
+from ...models.region import County, Market
 from ...models.prediction import Prediction
 from ...models.model_registry import ModelRegistry
+from ...models.trading import TradingData
 from ...schemas.prediction import (
     PredictionResponse,
     PredictionByCounty,
@@ -111,15 +112,19 @@ def get_predictions_by_county(
     """
     Get county-level predictions for choropleth map display.
     Returns the latest prediction per county for the given metric.
+
+    Since training only produces market-level and national-level predictions,
+    this endpoint derives county data by joining market predictions through
+    the Market -> County relationship and aggregating per county.
     """
     crop = _get_crop_or_404(db, crop_key)
 
-    # If no forecast_date provided, find the latest one
+    # If no forecast_date provided, find the latest one from market predictions
     if forecast_date is None:
         latest = (
             db.query(Prediction.forecast_date)
             .filter(Prediction.crop_id == crop.id)
-            .filter(Prediction.region_type == "county")
+            .filter(Prediction.region_type == "market")
             .filter(Prediction.target_metric == metric)
             .order_by(desc(Prediction.forecast_date))
             .first()
@@ -128,20 +133,23 @@ def get_predictions_by_county(
             return []
         forecast_date = latest.forecast_date
 
+    # Join market predictions -> Market -> County, then aggregate per county
     query = (
         db.query(
             County.county_code,
             County.county_name_zh,
-            Prediction.forecast_value,
-            Prediction.lower_bound,
-            Prediction.upper_bound,
+            func.avg(Prediction.forecast_value).label("forecast_value"),
+            func.min(Prediction.lower_bound).label("lower_bound"),
+            func.max(Prediction.upper_bound).label("upper_bound"),
         )
         .select_from(Prediction)
-        .join(County, Prediction.region_id == County.id)
+        .join(Market, Prediction.region_id == Market.id)
+        .join(County, Market.county_id == County.id)
         .filter(Prediction.crop_id == crop.id)
-        .filter(Prediction.region_type == "county")
+        .filter(Prediction.region_type == "market")
         .filter(Prediction.target_metric == metric)
         .filter(Prediction.forecast_date == forecast_date)
+        .group_by(County.county_code, County.county_name_zh)
     )
 
     rows = query.all()
@@ -152,9 +160,9 @@ def get_predictions_by_county(
             PredictionByCounty(
                 county_code=row.county_code,
                 county_name_zh=row.county_name_zh,
-                forecast_value=row.forecast_value,
-                lower_bound=row.lower_bound or 0.0,
-                upper_bound=row.upper_bound or 0.0,
+                forecast_value=round(float(row.forecast_value), 2),
+                lower_bound=round(float(row.lower_bound), 2) if row.lower_bound else 0.0,
+                upper_bound=round(float(row.upper_bound), 2) if row.upper_bound else 0.0,
             )
         )
     return results
@@ -174,6 +182,7 @@ def get_model_info(
     models = (
         db.query(ModelRegistry)
         .filter(ModelRegistry.crop_id == crop.id)
+        .filter(ModelRegistry.is_active == True)
         .order_by(desc(ModelRegistry.trained_at))
         .all()
     )
@@ -194,6 +203,19 @@ def get_model_info(
     return results
 
 
+@router.get("/{crop_key}/summary")
+def get_forecast_summary(
+    crop_key: str,
+    horizon: str = Query("1m", description="Horizon label (1m, 3m, 6m)"),
+    db: Session = Depends(get_db),
+):
+    """
+    Get a human-readable forecast summary with trend, confidence, and insights.
+    """
+    from ...services.forecast_summary import generate_summary
+    return generate_summary(db, crop_key, horizon)
+
+
 @router.post("/{crop_key}/retrain")
 def trigger_retrain(
     crop_key: str,
@@ -208,4 +230,110 @@ def trigger_retrain(
         "status": "queued",
         "crop_key": crop.crop_key,
         "message": f"Retraining for '{crop.display_name_zh}' has been queued.",
+    }
+
+
+@router.get("/{crop_key}/feature-importance")
+def get_feature_importance(crop_key: str, db: Session = Depends(get_db)):
+    crop = _get_crop_or_404(db, crop_key)
+    # Find the latest active xgboost model with feature importance data
+    model = (
+        db.query(ModelRegistry)
+        .filter(
+            ModelRegistry.crop_id == crop.id,
+            ModelRegistry.model_type == "xgboost",
+            ModelRegistry.is_active == True,
+            ModelRegistry.feature_importance_json.isnot(None),
+        )
+        .order_by(desc(ModelRegistry.trained_at))
+        .first()
+    )
+    if not model or not model.feature_importance_json:
+        return {"features": [], "message": "No feature importance data available"}
+    fi = json.loads(model.feature_importance_json)
+    features = [{"name": k, "importance": round(v, 4)} for k, v in fi.items()]
+    return {"features": features}
+
+
+@router.get("/{crop_key}/accuracy")
+def get_model_accuracy(crop_key: str, db: Session = Depends(get_db)):
+    crop = _get_crop_or_404(db, crop_key)
+    # Get all active models' metrics
+    models = (
+        db.query(ModelRegistry)
+        .filter(ModelRegistry.crop_id == crop.id, ModelRegistry.is_active == True)
+        .order_by(desc(ModelRegistry.trained_at))
+        .all()
+    )
+    results = {}
+    for m in models:
+        key = f"{m.model_type}_{m.target_metric}_{m.region_type}_{m.region_id}"
+        if key not in results:  # Only keep the latest
+            results[key] = {
+                "model_type": m.model_type,
+                "target_metric": m.target_metric,
+                "region_type": m.region_type,
+                "mae": round(m.mae, 4) if m.mae else None,
+                "rmse": round(m.rmse, 4) if m.rmse else None,
+                "mape": round(m.mape, 2) if m.mape else None,
+                "training_rows": m.training_rows,
+            }
+    return {"models": list(results.values())}
+
+
+@router.post("/{crop_key}/predict-from-recent")
+def predict_from_recent(
+    crop_key: str,
+    days: int = Query(7, description="Use most recent N days of data"),
+    db: Session = Depends(get_db),
+):
+    """Use the most recent trading data to generate a quick prediction."""
+    crop = _get_crop_or_404(db, crop_key)
+    from datetime import timedelta
+
+    # Find the latest trade date for this crop instead of using utcnow()
+    latest_date_row = (
+        db.query(func.max(TradingData.trade_date))
+        .filter(TradingData.crop_id == crop.id)
+        .scalar()
+    )
+    if not latest_date_row:
+        raise HTTPException(404, "No trading data found for this crop")
+    cutoff = latest_date_row - timedelta(days=days)
+
+    recent = (
+        db.query(
+            func.avg(TradingData.price_avg).label("avg_price"),
+            func.sum(TradingData.volume).label("total_volume"),
+            func.count(TradingData.id).label("record_count"),
+        )
+        .filter(TradingData.crop_id == crop.id, TradingData.trade_date >= cutoff)
+        .first()
+    )
+
+    if not recent or recent.record_count == 0:
+        raise HTTPException(404, "No recent data found")
+
+    # Get latest prediction for comparison
+    latest_pred = (
+        db.query(Prediction)
+        .filter(
+            Prediction.crop_id == crop.id,
+            Prediction.target_metric == "price_avg",
+            Prediction.model_name == "ensemble",
+        )
+        .order_by(desc(Prediction.forecast_date))
+        .first()
+    )
+
+    return {
+        "crop_key": crop_key,
+        "days_used": days,
+        "record_count": recent.record_count,
+        "recent_avg_price": round(float(recent.avg_price), 2),
+        "recent_total_volume": round(float(recent.total_volume), 2),
+        "model_forecast": round(latest_pred.forecast_value, 2) if latest_pred else None,
+        "difference_pct": round(
+            (float(recent.avg_price) - latest_pred.forecast_value) / latest_pred.forecast_value * 100, 2
+        ) if latest_pred and latest_pred.forecast_value else None,
     }

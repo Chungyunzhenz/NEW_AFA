@@ -61,7 +61,7 @@ export default function TaiwanMap({ data = [], metric }) {
   const [geoData, setGeoData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [tooltip, setTooltip] = useState({ show: false, x: 0, y: 0, county: '', avgPrice: 0, volume: 0, productionTonnes: 0 });
+  const [tooltip, setTooltip] = useState({ show: false, x: 0, y: 0, county: '', avgPrice: 0, volume: 0, productionTonnes: 0, tempAvg: null, rainfallMm: null });
 
   const { hoveredCounty, selectedCounty, setHoveredCounty, setSelectedCounty } = useMapStore();
 
@@ -229,6 +229,8 @@ export default function TaiwanMap({ data = [], metric }) {
             avgPrice: record?.avgPrice ?? 0,
             volume: record?.volume ?? 0,
             productionTonnes: record?.productionTonnes ?? 0,
+            tempAvg: record?.tempAvg ?? null,
+            rainfallMm: record?.rainfallMm ?? null,
           });
         }
       })
@@ -326,6 +328,8 @@ export default function TaiwanMap({ data = [], metric }) {
         avgPrice={tooltip.avgPrice}
         volume={tooltip.volume}
         productionTonnes={tooltip.productionTonnes}
+        tempAvg={tooltip.tempAvg}
+        rainfallMm={tooltip.rainfallMm}
       />
 
       {/* Legend */}

@@ -93,6 +93,8 @@ export default function useMapData() {
               avgPrice: tradItem?.avg_price ?? item.avg_price ?? 0,
               volume: tradItem?.volume ?? item.volume ?? 0,
               productionTonnes: prodItem?.production_tonnes ?? prodItem?.value ?? item.production_tonnes ?? 0,
+              tempAvg: tradItem?.temp_avg ?? item.temp_avg ?? null,
+              rainfallMm: tradItem?.rainfall_mm ?? item.rainfall_mm ?? null,
               raw: item,
             };
           });

@@ -33,7 +33,15 @@ def get_traffic_light(
     - area_growth_pct: latest year planted_area_ha vs previous year growth %
     """
     crop = _get_crop_or_404(db, crop_key)
-    today = date.today()
+
+    # Use latest data date as reference instead of today, so metrics
+    # work even when data hasn't been updated recently.
+    latest_date = (
+        db.query(func.max(TradingData.trade_date))
+        .filter(TradingData.crop_id == crop.id)
+        .scalar()
+    )
+    ref_date = latest_date if latest_date else date.today()
 
     # --- supply_index ---
     supply_index = None
@@ -45,7 +53,7 @@ def get_traffic_light(
     recent_volume = (
         db.query(func.sum(TradingData.volume))
         .filter(TradingData.crop_id == crop.id)
-        .filter(TradingData.trade_date >= today - timedelta(days=180))
+        .filter(TradingData.trade_date >= ref_date - timedelta(days=180))
         .scalar()
     )
     if recent_production and recent_volume and recent_volume > 0:
@@ -56,14 +64,14 @@ def get_traffic_light(
     avg_30d = (
         db.query(func.avg(TradingData.price_avg))
         .filter(TradingData.crop_id == crop.id)
-        .filter(TradingData.trade_date >= today - timedelta(days=30))
+        .filter(TradingData.trade_date >= ref_date - timedelta(days=30))
         .scalar()
     )
     avg_6m = (
         db.query(func.avg(TradingData.price_avg))
         .filter(TradingData.crop_id == crop.id)
-        .filter(TradingData.trade_date >= today - timedelta(days=180))
-        .filter(TradingData.trade_date < today - timedelta(days=30))
+        .filter(TradingData.trade_date >= ref_date - timedelta(days=180))
+        .filter(TradingData.trade_date < ref_date - timedelta(days=30))
         .scalar()
     )
     if avg_30d is not None and avg_6m is not None and avg_6m > 0:

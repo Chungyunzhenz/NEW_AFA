@@ -431,6 +431,14 @@ class ModelTrainer:
             )
             result["predictions"] = predictions
 
+            # ---- Extract feature importance (XGBoost) ----
+            feature_importance_json = None
+            if model_type == "xgboost" and hasattr(model_obj, 'feature_importances_'):
+                fi = dict(zip(feature_cols, model_obj.feature_importances_.tolist()))
+                # Sort and keep top 20
+                fi_sorted = dict(sorted(fi.items(), key=lambda x: x[1], reverse=True)[:20])
+                feature_importance_json = json.dumps(fi_sorted)
+
             # ---- Save artifact ----
             artifact_path = self._save_artifact(
                 model_type, model_obj, feature_cols, crop_config,
@@ -448,6 +456,7 @@ class ModelTrainer:
                 artifact_path=artifact_path,
                 metrics=metrics,
                 training_rows=len(train_df),
+                feature_importance_json=feature_importance_json,
             )
 
             logger.info(
@@ -613,6 +622,7 @@ class ModelTrainer:
         artifact_path: str,
         metrics: EvaluationMetrics,
         training_rows: int,
+        feature_importance_json: Optional[str] = None,
     ) -> ModelRegistry:
         """Upsert a model-registry row: deactivate previous entries for the
         same (crop_id, region, metric, model_type) and insert a new active
@@ -644,6 +654,7 @@ class ModelTrainer:
             trained_at=datetime.utcnow(),
             training_rows=training_rows,
             is_active=True,
+            feature_importance_json=feature_importance_json,
         )
         db.add(entry)
         db.flush()

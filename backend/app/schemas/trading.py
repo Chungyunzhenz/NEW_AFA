@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel
 from datetime import date
 
@@ -31,5 +32,7 @@ class TradingByCounty(BaseModel):
     county_name_zh: str
     avg_price: float
     volume: float
+    temp_avg: Optional[float] = None
+    rainfall_mm: Optional[float] = None
 
     model_config = {"from_attributes": True}

@@ -29,6 +29,7 @@ from ..config import load_crop_configs
 from ..models import Crop, Market, TradingData, WeatherData
 from ..models.prediction import Prediction
 from ..models.model_registry import ModelRegistry
+from ..models.typhoon import TyphoonEvent
 from .ensemble import EnsemblePredictor
 from .model_evaluator import ModelEvaluator
 from .model_trainer import ModelTrainer
@@ -39,7 +40,8 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 MINIMUM_MONTHS = 24           # At least 24 monthly observations required
-TRAIN_RATIO = 0.80            # 80 / 20 train-val split
+TRAIN_RATIO = 0.70            # 70 / 30 train-val split (after holdout removal)
+HOLDOUT_DAYS = 90             # Reserve the most recent 90 days for future validation
 TARGET_METRICS = ("price_avg", "volume")
 HORIZON_MAP = {               # label -> months
     "1m": 1,
@@ -210,14 +212,24 @@ class PredictionEngine:
             ]
             monthly_df[weather_cols] = monthly_df[weather_cols].ffill().bfill()
 
-        # 3. Train / validation split
-        train_df, val_df = self._time_split(monthly_df)
+        # 2b. Fetch typhoon data and add typhoon features
+        typhoon_df = self._fetch_typhoon_data(db)
+        if typhoon_df is not None and not typhoon_df.empty:
+            from ..ml.feature_engineering import add_typhoon_features
+            monthly_df = add_typhoon_features(monthly_df, "ds", typhoon_df)
+
+        # 3. Train / validation / holdout split
+        train_df, val_df, holdout_df = self._time_split(monthly_df)
         if len(train_df) < 12 or len(val_df) < 3:
             logger.warning(
-                "Train/val split too small for %s (train=%d, val=%d) — skipping.",
-                label, len(train_df), len(val_df),
+                "Train/val split too small for %s (train=%d, val=%d, holdout=%d) — skipping.",
+                label, len(train_df), len(val_df), len(holdout_df),
             )
             return {"status": "skipped", "reason": "split_too_small"}
+        logger.info(
+            "Data split for %s: train=%d, val=%d, holdout=%d (reserved, not used)",
+            label, len(train_df), len(val_df), len(holdout_df),
+        )
 
         # 4. Train and evaluate all model types
         model_results = self._train_and_evaluate(
@@ -299,6 +311,7 @@ class PredictionEngine:
             "status": "ok",
             "train_rows": len(train_df),
             "val_rows": len(val_df),
+            "holdout_rows": len(holdout_df),
             "models_trained": list(model_results.keys()),
             "ensemble_weights": {k: round(v, 4) for k, v in weights.items()},
         }
@@ -428,13 +441,30 @@ class PredictionEngine:
     # Train / validation split
     # ------------------------------------------------------------------
     @staticmethod
-    def _time_split(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        """Split a chronologically sorted DataFrame 80/20."""
-        n = len(df)
+    def _time_split(
+        df: pd.DataFrame,
+    ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """Split a chronologically sorted DataFrame into train / val / holdout.
+
+        1. Remove the most recent ``HOLDOUT_DAYS`` (≈3 months) as holdout —
+           this data is completely excluded from training and evaluation.
+        2. Split the remaining data 70/30 into train and validation sets.
+
+        Returns ``(train_df, val_df, holdout_df)``.
+        """
+        df = df.copy()
+        df["ds"] = pd.to_datetime(df["ds"])
+
+        cutoff_date = df["ds"].max() - pd.Timedelta(days=HOLDOUT_DAYS)
+        holdout = df[df["ds"] > cutoff_date].copy().reset_index(drop=True)
+        remaining = df[df["ds"] <= cutoff_date].copy()
+
+        n = len(remaining)
         split_idx = int(n * TRAIN_RATIO)
-        train = df.iloc[:split_idx].copy().reset_index(drop=True)
-        val = df.iloc[split_idx:].copy().reset_index(drop=True)
-        return train, val
+        train = remaining.iloc[:split_idx].copy().reset_index(drop=True)
+        val = remaining.iloc[split_idx:].copy().reset_index(drop=True)
+
+        return train, val, holdout
 
     # ------------------------------------------------------------------
     # Train and evaluate all models
@@ -550,6 +580,34 @@ class PredictionEngine:
             horizon_label,
         )
         return count
+
+    # ------------------------------------------------------------------
+    # Typhoon data
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _fetch_typhoon_data(db: Session) -> Optional[pd.DataFrame]:
+        """Fetch all typhoon events from the database as a DataFrame."""
+        try:
+            rows = (
+                db.query(
+                    TyphoonEvent.warning_start,
+                    TyphoonEvent.warning_end,
+                    TyphoonEvent.intensity,
+                    TyphoonEvent.max_wind_ms,
+                    TyphoonEvent.min_pressure_hpa,
+                )
+                .order_by(TyphoonEvent.warning_start)
+                .all()
+            )
+            if not rows:
+                return None
+            return pd.DataFrame(
+                rows,
+                columns=["warning_start", "warning_end", "intensity", "max_wind_ms", "min_pressure_hpa"],
+            )
+        except Exception:
+            logger.warning("Could not fetch typhoon data — table may not exist yet.")
+            return None
 
     # ------------------------------------------------------------------
     # Helpers

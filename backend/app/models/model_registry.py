@@ -30,6 +30,7 @@ class ModelRegistry(Base):
     trained_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     training_rows: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    feature_importance_json: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     crop: Mapped[Optional["Crop"]] = relationship(
         "Crop", back_populates="model_registries"

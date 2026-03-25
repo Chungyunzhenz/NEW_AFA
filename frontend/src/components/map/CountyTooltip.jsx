@@ -12,7 +12,7 @@ import { formatCurrency, formatNumber } from '../../utils/formatters';
  *  - volume:           number   -- trading volume (kg)
  *  - productionTonnes: number   -- production (tonnes)
  */
-export default function CountyTooltip({ show, x, y, county, avgPrice, volume, productionTonnes }) {
+export default function CountyTooltip({ show, x, y, county, avgPrice, volume, productionTonnes, tempAvg, rainfallMm }) {
   const style = useMemo(
     () => ({
       left: x + 16,
@@ -24,11 +24,7 @@ export default function CountyTooltip({ show, x, y, county, avgPrice, volume, pr
 
   if (!show) return null;
 
-  const rows = [
-    { label: '平均價格', value: avgPrice ? formatCurrency(avgPrice, 1) : '—' },
-    { label: '交易量', value: volume ? `${formatNumber(volume)} 公斤` : '—' },
-    { label: '產量', value: productionTonnes ? `${formatNumber(productionTonnes)} 公噸` : '—' },
-  ];
+  const hasData = avgPrice > 0 || volume > 0;
 
   return (
     <div
@@ -40,14 +36,38 @@ export default function CountyTooltip({ show, x, y, county, avgPrice, volume, pr
 
       <p className="text-sm font-semibold text-gray-800">{county}</p>
 
-      <dl className="mt-1 space-y-0.5">
-        {rows.map((r) => (
-          <div key={r.label} className="flex items-baseline justify-between gap-3">
-            <dt className="text-xs text-gray-500">{r.label}</dt>
-            <dd className="text-sm font-medium tabular-nums text-emerald-700">{r.value}</dd>
+      {hasData ? (
+        <dl className="mt-1 space-y-0.5">
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="text-xs text-gray-500">平均價格</dt>
+            <dd className="text-sm font-medium tabular-nums text-emerald-700">{formatCurrency(avgPrice, 1)}</dd>
           </div>
-        ))}
-      </dl>
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="text-xs text-gray-500">交易量</dt>
+            <dd className="text-sm font-medium tabular-nums text-emerald-700">{formatNumber(volume)} 公斤</dd>
+          </div>
+          {productionTonnes > 0 && (
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="text-xs text-gray-500">產量</dt>
+              <dd className="text-sm font-medium tabular-nums text-emerald-700">{formatNumber(productionTonnes)} 公噸</dd>
+            </div>
+          )}
+          {tempAvg != null && (
+            <div className="flex items-baseline justify-between gap-3 border-t border-gray-100 pt-0.5 mt-0.5">
+              <dt className="text-xs text-gray-500">平均氣溫</dt>
+              <dd className="text-sm font-medium tabular-nums text-blue-600">{tempAvg}°C</dd>
+            </div>
+          )}
+          {rainfallMm != null && (
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="text-xs text-gray-500">近月降雨</dt>
+              <dd className="text-sm font-medium tabular-nums text-blue-600">{formatNumber(rainfallMm)} mm</dd>
+            </div>
+          )}
+        </dl>
+      ) : (
+        <p className="mt-1 text-xs text-gray-400">此縣市暫無交易紀錄</p>
+      )}
     </div>
   );
 }

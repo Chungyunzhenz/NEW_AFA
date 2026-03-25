@@ -6,3 +6,4 @@ from .weather import WeatherData
 from .prediction import Prediction
 from .model_registry import ModelRegistry
 from .upload import ColumnMappingPreset
+from .typhoon import TyphoonEvent, TyphoonAffectedCounty

@@ -18,7 +18,7 @@ import { getForecast, getModelInfo } from '../api/predictions';
  *   error: string|null
  * }}
  */
-export default function usePredictions({ horizon = '7d' } = {}) {
+export default function usePredictions({ horizon = '1m' } = {}) {
   const { selectedCrop, metric } = useFilterStore();
 
   const [predictions, setPredictions] = useState([]);
@@ -47,7 +47,7 @@ export default function usePredictions({ horizon = '7d' } = {}) {
       try {
         // Fetch forecast and model info in parallel
         const [forecastResult, modelResult] = await Promise.all([
-          getForecast({ crop: selectedCrop, horizon }).catch((err) => {
+          getForecast({ crop: selectedCrop, horizon, metric: metric || 'price_avg' }).catch((err) => {
             console.warn('[usePredictions] forecast fetch failed:', err.message);
             return null;
           }),
@@ -61,17 +61,19 @@ export default function usePredictions({ horizon = '7d' } = {}) {
 
         // Process forecast result
         if (forecastResult) {
-          if (Array.isArray(forecastResult)) {
-            setPredictions(forecastResult);
-            // Use the last item as the primary forecast point
-            setForecast(forecastResult.length > 0 ? forecastResult[forecastResult.length - 1] : null);
-          } else if (forecastResult.predictions) {
-            setPredictions(forecastResult.predictions);
-            setForecast(forecastResult);
-          } else {
-            setPredictions([]);
-            setForecast(forecastResult);
-          }
+          const items = Array.isArray(forecastResult)
+            ? forecastResult
+            : forecastResult.predictions ?? [];
+          setPredictions(items);
+
+          // Find the best forecast: ensemble + national + price_avg
+          const currentMetric = metric || 'price_avg';
+          const best =
+            items.find((d) => d.model_name === 'ensemble' && d.region_type === 'national' && d.target_metric === currentMetric) ||
+            items.find((d) => d.model_name === 'ensemble' && d.target_metric === currentMetric) ||
+            items.find((d) => d.target_metric === currentMetric) ||
+            (items.length > 0 ? items[0] : null);
+          setForecast(best);
         } else {
           setPredictions([]);
           setForecast(null);
