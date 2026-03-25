@@ -1,0 +1,231 @@
+============================================================
+  台灣農產品產銷預測系統 — 技術文件
+  Taiwan Agricultural Product Forecasting System
+  建立日期：2026-03-24
+============================================================
+
+一、系統概述
+------------------------------------------------------------
+本系統整合台灣農產品之交易資料、天氣資料、產量資料及颱風事件，
+運用機器學習模型（Prophet、SARIMA、XGBoost）進行價格與產量預測，
+並提供視覺化儀表板供決策參考。
+
+
+二、資料來源與筆數
+------------------------------------------------------------
+
+1. 交易資料（Trading Data）
+   - 來源：農糧署 AMIS API（農產品交易行情）
+   - API：https://amis.afa.gov.tw
+   - 筆數：12,976,260 筆
+   - 時間範圍：2012-01-01 ~ 2026-01-01
+   - 涵蓋作物：20 種
+   - 涵蓋市場：20 個批發市場
+   - 欄位：交易日期、作物、市場、最高價、中價、最低價、平均價、交易量
+
+2. 天氣資料（Weather Data）
+   - 來源：中央氣象署 CWA Open Data API
+   - API：https://opendata.cwa.gov.tw
+   - 資料集 ID：
+     * O-A0003-001（即時觀測資料）
+     * C-B0024-001（歷史逐日氣候資料）
+   - 筆數：119,080 筆
+   - 時間範圍：2005-01-01 ~ 2026-03-20
+   - 涵蓋縣市：22 個縣市
+   - 欄位：觀測日期、縣市、平均溫度、最高溫、最低溫、降雨量(mm)、濕度(%)
+
+3. 產量資料（Production Data）
+   - 來源：農糧署公開統計（手動匯入 CSV）
+   - 筆數：5,951 筆
+   - 時間範圍：2008 年 ~ 2024 年
+   - 涵蓋作物：19 種（稻米除外）
+
+4. 颱風事件資料（Typhoon Events）
+   - 來源：中央氣象署颱風資料庫（CWA TDB）
+   - 網址：https://rdc28.cwa.gov.tw/TDB/public/basic_query/
+   - 筆數：145 筆（有發布警報之颱風）
+   - 時間範圍：2000 年 ~ 2025 年
+   - 欄位：颱風編號、中英文名稱、警報期間、強度（輕度/中度/強烈）、
+           侵台路徑分類、最低氣壓、最大風速、暴風半徑、警報發布次數
+
+5. 即時颱風警報
+   - 來源：中央氣象署 CWA Open Data API
+   - 資料集 ID：W-C0034-005（颱風路徑即時資料）
+
+
+三、使用技術
+------------------------------------------------------------
+
+【後端】
+- 語言：Python 3.10
+- Web 框架：FastAPI
+- ORM：SQLAlchemy 2.0
+- 資料庫：SQLite（agriculture.db，2.1 GB）
+- 排程：APScheduler（每週日 02:00 自動重訓模型）
+
+【機器學習】
+- Prophet（Facebook 開源時間序列預測）
+- SARIMA（pmdarima 自動 ARIMA 參數選擇）
+- XGBoost（梯度提升樹 + 分位數迴歸信賴區間）
+- 集成方法：反向 MAPE 加權集成（Inverse-MAPE Weighted Ensemble）
+- 特徵工程：
+  * 滯後特徵（lag 1/2/3/6/12 期）
+  * 滾動統計（3/6/12 期均值、標準差）
+  * 日曆特徵（月份、季度、產季標記）
+  * 季節性編碼（sin/cos）
+  * 年對比（YoY）
+  * 天氣特徵（溫度、降雨、溫度異常）
+  * 颱風特徵（颱風月標記、強度、距颱風天數、颱風後1-2個月標記、極端降雨）
+
+【前端】
+- 框架：React 19 + Vite
+- 狀態管理：Zustand
+- 圖表：Recharts（折線圖、長條圖、雙軸圖、水平長條圖）
+- 樣式：Tailwind CSS 4
+- HTTP：Axios
+
+【資料分割策略】
+- Holdout：最近 90 天資料完全保留，不參與訓練和測試
+- 訓練集：剩餘資料的 70%
+- 測試集：剩餘資料的 30%
+
+
+四、系統功能與呈現方式
+------------------------------------------------------------
+
+1. 儀表板總覽
+   - 交易趨勢摘要卡片（最新價格、交易量、變化率）
+   - 台灣地圖（縣市交易分佈）
+   - 價格趨勢折線圖
+
+2. 預測結果
+   - 預測摘要文字（自動生成中文趨勢解讀）
+   - 歷史價格與預測走勢圖（含信賴區間陰影帶）
+   - 價量雙軸圖（價格折線 + 交易量長條）
+   - 季節性比較圖（歷年同月對比）
+   - 模型效能比較圖（MAE/RMSE/MAPE）
+   - 特徵重要性圖表（影響預測的關鍵因素排名）
+   - 預測期間切換（1個月/3個月/6個月）
+
+3. 颱風情境模擬
+   - 颱風強度選擇（輕度/中度/強烈）
+   - 月份選擇
+   - 原始預測 vs 颱風調整後預測對比
+   - 歷史颱風事件標記在圖表上
+
+4. 近期資料即時預測
+   - 選擇天數（7天/14天/30天）
+   - 近期實際均價 vs 模型預測對比
+   - 差異百分比顯示
+
+5. 資料品質監控
+   - 交易/天氣/產量三大資料源健康度（紅黃綠燈）
+   - 各作物資料完整度表格
+   - 缺漏詳情展開
+
+6. 資料匯出
+   - 預測結果 CSV 匯出
+   - 歷史交易資料 CSV 匯出
+   - SQLite 資料庫檔案下載
+
+
+五、API 端點列表（共 37 個）
+------------------------------------------------------------
+
+【作物】
+GET  /api/v1/crops/                           作物清單
+GET  /api/v1/crops/{crop_key}                 單一作物資訊
+
+【地區】
+GET  /api/v1/regions/counties                 縣市清單
+GET  /api/v1/regions/markets                  市場清單
+GET  /api/v1/regions/geojson                  地圖 GeoJSON
+
+【交易資料】
+GET  /api/v1/trading/{crop_key}/daily         每日交易資料
+GET  /api/v1/trading/{crop_key}/aggregated    彙總資料
+GET  /api/v1/trading/{crop_key}/by-county     按縣市分組
+GET  /api/v1/trading/{crop_key}/markets/{code} 特定市場
+
+【產量資料】
+GET  /api/v1/production/{crop_key}/by-county    按縣市分組
+GET  /api/v1/production/{crop_key}/timeseries   時間序列
+
+【預測】
+GET  /api/v1/predictions/{crop_key}/forecast              預測結果
+GET  /api/v1/predictions/{crop_key}/by-county             縣市預測
+GET  /api/v1/predictions/{crop_key}/model-info            模型資訊
+GET  /api/v1/predictions/{crop_key}/summary               預測摘要文字
+GET  /api/v1/predictions/{crop_key}/feature-importance    特徵重要性
+GET  /api/v1/predictions/{crop_key}/accuracy              模型準確度
+POST /api/v1/predictions/{crop_key}/retrain               觸發重訓
+POST /api/v1/predictions/{crop_key}/predict-from-recent   即時預測
+
+【颱風】
+GET  /api/v1/typhoon/events                   颱風事件列表
+GET  /api/v1/typhoon/events/{year}            按年度查詢
+GET  /api/v1/typhoon/impact/{crop_key}        颱風影響分析
+POST /api/v1/typhoon/simulate                 情境模擬
+
+【資料品質】
+GET  /api/v1/data-quality/overview            整體健康度
+GET  /api/v1/data-quality/{crop_key}          單一作物品質
+
+【資料匯出】
+GET  /api/v1/export/predictions/{crop_key}    匯出預測 CSV
+GET  /api/v1/export/historical/{crop_key}     匯出歷史 CSV
+GET  /api/v1/export/model-performance         匯出模型效能
+GET  /api/v1/export/database                  下載 SQLite 檔案
+
+【資料同步】
+GET  /api/v1/sync/status                      同步狀態
+POST /api/v1/sync/fetch-latest                抓取最新資料
+POST /api/v1/sync/backfill-crop-ids           回補作物ID
+POST /api/v1/sync/backfill-market-ids         回補市場ID
+
+【上傳】
+POST /api/v1/upload/file                      上傳檔案
+POST /api/v1/upload/preview                   預覽
+POST /api/v1/upload/confirm                   確認匯入
+
+【警示】
+GET  /api/v1/alerts/traffic-light/{crop_key}  紅綠燈警示
+
+
+六、資料庫結構（10 張表）
+------------------------------------------------------------
+
+1. crops           — 作物主表（20 筆，目前啟用 1 筆：甘藍）
+2. counties        — 縣市表（22 筆）
+3. markets         — 批發市場表（20 筆）
+4. trading_data    — 交易紀錄（12,976,260 筆）
+5. weather_data    — 天氣觀測（119,080 筆）
+6. production_data — 年度產量（5,951 筆）
+7. predictions     — 預測結果（2,130 筆）
+8. model_registry  — 模型註冊表（337 筆，含特徵重要性）
+9. typhoon_events  — 颱風事件（145 筆）
+10. typhoon_affected_counties — 颱風影響縣市（待建置）
+
+
+七、模型訓練結果（甘藍 cabbage）
+------------------------------------------------------------
+
+國家級預測（price_avg）：
+  - 訓練集：116 筆月度資料
+  - 測試集：50 筆
+  - 保留集：3 筆（最近 90 天）
+  - 集成權重：Prophet 99.8%, SARIMA 0.1%, XGBoost 0.1%
+
+XGBoost 特徵重要性前 5 名：
+  1. price_avg（歷史價格）    29.7%
+  2. post_typhoon_1m（颱風後1月）11.9%
+  3. volume（交易量）          10.8%
+  4. temp_avg（平均溫度）       9.5%
+  5. lag_1（前1期）             7.0%
+
+
+============================================================
+  系統版本：1.0.0
+  資料庫大小：2.1 GB
+  最後訓練時間：2026-03-24
+============================================================

@@ -1,0 +1,180 @@
+============================================================
+  台灣農產品產銷預測系統 — 資料關聯與技術說明
+============================================================
+
+
+一、資料表關聯圖
+------------------------------------------------------------
+
+  crops (作物表)
+    |
+    |-- crop_id ---> trading_data (交易資料)
+    |                  |
+    |                  |-- market_id ---> markets (批發市場)
+    |                                      |
+    |                                      |-- county_id ---> counties (縣市)
+    |                                                           |
+    |-- crop_id ---> production_data (產量資料)                 |-- county_id ---> weather_data (天氣資料)
+    |                  |                                        |
+    |                  |-- county_id ----> counties              |-- county_id ---> typhoon_affected_counties
+    |                                                                                |
+    |-- crop_id ---> predictions (預測結果)                                          |-- typhoon_id ---> typhoon_events (颱風事件)
+    |
+    |-- crop_id ---> model_registry (模型紀錄)
+
+
+二、各資料表說明
+------------------------------------------------------------
+
+1. crops (作物表) - 20筆
+   - 主鍵：id
+   - 欄位：crop_key(代碼), display_name_zh(中文名), is_active(啟用)
+   - 關聯：被 trading_data, production_data, predictions 參照
+
+2. counties (縣市表) - 22筆
+   - 主鍵：id
+   - 欄位：county_code(行政區碼), county_name_zh(中文名)
+   - 關聯：被 markets, weather_data, production_data 參照
+
+3. markets (批發市場表) - 20筆
+   - 主鍵：id
+   - 欄位：market_code(代碼), market_name(名稱), county_id(所在縣市)
+   - 關聯：屬於某個 county；被 trading_data 參照
+
+4. trading_data (交易資料) - 12,976,260筆
+   - 主鍵：id
+   - 欄位：trade_date(日期), crop_id(作物), market_id(市場),
+           price_high(最高價), price_mid(中價), price_low(最低價),
+           price_avg(平均價), volume(交易量)
+   - 關聯：屬於某個 crop + market
+
+5. weather_data (天氣資料) - 119,080筆
+   - 主鍵：id
+   - 欄位：observation_date(日期), county_id(縣市),
+           temp_avg(均溫), temp_max(最高溫), temp_min(最低溫),
+           rainfall_mm(降雨量), humidity_pct(濕度)
+   - 關聯：屬於某個 county
+   - 唯一約束：(observation_date, county_id)
+
+6. production_data (產量資料) - 5,951筆
+   - 主鍵：id
+   - 欄位：year(年份), crop_id(作物), county_id(縣市),
+           planted_area_ha(種植面積), production_tonnes(產量噸)
+   - 關聯：屬於某個 crop + county
+
+7. typhoon_events (颱風事件) - 145筆
+   - 主鍵：id
+   - 欄位：cwa_id(氣象署編號), typhoon_name_zh/en(中英名),
+           year(年份), warning_start/end(警報起迄),
+           intensity(輕度/中度/強烈), invasion_path(侵台路徑),
+           min_pressure_hpa(最低氣壓), max_wind_ms(最大風速)
+   - 來源：中央氣象署颱風資料庫(CWA TDB)
+
+8. predictions (預測結果) - 2,130筆
+   - 主鍵：id
+   - 欄位：crop_id(作物), forecast_date(預測日期),
+           forecast_value(預測值), lower_bound/upper_bound(信賴區間),
+           model_name(模型名), horizon_label(期間1m/3m/6m),
+           region_type(national/market), region_id
+   - 關聯：屬於某個 crop
+
+9. model_registry (模型紀錄) - 337筆
+   - 主鍵：id
+   - 欄位：crop_id(作物), model_type(prophet/sarima/xgboost),
+           mae/rmse/mape(評估指標), is_active(啟用中),
+           feature_importance_json(特徵重要性)
+   - 關聯：屬於某個 crop
+
+10. typhoon_affected_counties (颱風影響縣市) - 0筆(待建置)
+    - 欄位：typhoon_id, county_id, impact_level(direct/indirect)
+
+
+三、資料如何串連產出預測
+------------------------------------------------------------
+
+步驟 1：資料收集
+  交易資料 <-- AMIS API (農糧署，每日自動抓取)
+  天氣資料 <-- CWA API (氣象署，每日自動抓取)
+  產量資料 <-- CSV 手動匯入 (農糧署年度統計)
+  颱風資料 <-- CWA 颱風資料庫 (手動更新)
+
+步驟 2：資料關聯
+  交易資料 --透過 market_id--> 市場 --透過 county_id--> 縣市
+  天氣資料 --透過 county_id--> 縣市
+
+  同一個縣市的交易資料和天氣資料透過 county_id 關聯在一起。
+  例如：雲林縣的甘藍交易價格 + 雲林縣的溫度/降雨 = 同一列資料。
+
+步驟 3：月度彙總
+  每日交易資料 → 按月彙總為月均價、月交易量
+  每日天氣資料 → 按月彙總為月均溫、月累積降雨
+  颱風事件 → 標記哪些月份有颱風、強度、颱風後幾個月
+
+步驟 4：特徵工程（產生模型輸入）
+  ┌────────────────────────────────────────────┐
+  │ 月度特徵表（每月一列）                       │
+  │                                              │
+  │ 目標值：price_avg (月均價)                   │
+  │                                              │
+  │ 特徵群 1 - 歷史價格：                        │
+  │   lag_1, lag_2, lag_3, lag_6, lag_12         │
+  │   roll_mean_3, roll_mean_6, roll_mean_12    │
+  │   yoy_value, yoy_growth                     │
+  │                                              │
+  │ 特徵群 2 - 日曆：                            │
+  │   month, quarter, is_peak_season            │
+  │   month_sin, month_cos                       │
+  │                                              │
+  │ 特徵群 3 - 天氣：                            │
+  │   temp_avg, rainfall_mm, temp_anomaly        │
+  │                                              │
+  │ 特徵群 4 - 颱風：                            │
+  │   is_typhoon_month, typhoon_count            │
+  │   typhoon_intensity_max, days_since_typhoon  │
+  │   post_typhoon_1m, post_typhoon_2m           │
+  │   extreme_rainfall_flag                      │
+  └────────────────────────────────────────────┘
+
+步驟 5：模型訓練（三個模型）
+  Prophet  - Facebook 時間序列模型，擅長季節性
+  SARIMA   - 統計時間序列模型，擅長趨勢
+  XGBoost  - 梯度提升樹，擅長非線性關係
+
+步驟 6：集成預測
+  三個模型各自預測 → 用反向 MAPE 加權合併
+  權重公式：weight_i = (1/MAPE_i) / 所有(1/MAPE_j)的總和
+  → 誤差越小的模型權重越高
+
+
+四、前端呈現與資料對應
+------------------------------------------------------------
+
+┌─ 篩選器 ────────────────────────────────────┐
+│  作物選擇 → selectedCrop                     │
+│  日期範圍 → dateRange (startDate ~ endDate)  │
+│  時間粒度 → granularity (日/週/月/年)         │
+│  指標選擇 → metric (價格/交易量/產量)         │
+└──────────────────────────────────────────────┘
+         ↓ 所有圖表和卡片根據篩選器動態更新
+
+產銷預警燈號 ← 交易資料 + 產量資料
+摘要卡片     ← 交易資料（最新均價、月增率、交易量）
+預測摘要     ← 預測結果 + 交易資料（趨勢比較）
+地圖         ← 交易資料 + 天氣資料（按縣市彙總）
+預測圖表     ← 預測結果 + 交易資料（歷史+預測）
+颱風模擬     ← 颱風事件 + 預測結果 + 交易資料
+特徵重要性   ← 模型紀錄（XGBoost feature_importances）
+
+
+五、技術架構
+------------------------------------------------------------
+
+後端：Python 3.10 + FastAPI + SQLAlchemy + SQLite
+前端：React 19 + Vite + Recharts + Tailwind CSS + Zustand
+ML  ：Prophet + SARIMA (pmdarima) + XGBoost
+
+資料流：
+  API 抓取 → SQLite 儲存 → 月度彙總 → 特徵工程 → 模型訓練
+  → 預測結果 → API 提供 → React 前端顯示
+
+============================================================

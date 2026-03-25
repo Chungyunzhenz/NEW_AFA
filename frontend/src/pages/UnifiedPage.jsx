@@ -676,6 +676,216 @@ export default function UnifiedPage() {
         </div>
       )}
 
+      {/* ============================================ */}
+      {/*  § AI 預測核心（直接顯示）                     */}
+      {/* ============================================ */}
+      <div className="rounded-2xl border-2 border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 p-6 shadow-sm">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="h-8 w-8 rounded-lg bg-blue-600 flex items-center justify-center">
+            <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5" />
+            </svg>
+          </div>
+          <h2 className="text-lg font-bold text-gray-900">AI 預測分析</h2>
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-sm text-gray-500">預測期間:</span>
+            <div className="flex items-center rounded-lg bg-white/70 p-0.5">
+              {horizonOptions.map((opt) => (
+                <button key={opt.value} onClick={() => setHorizon(opt.value)} className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${horizon === opt.value ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-600 hover:text-gray-800'}`}>{opt.label}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          {/* Left: Forecast value */}
+          <div className="rounded-xl bg-white p-5 shadow-sm">
+            <p className="text-xs font-medium text-gray-500 mb-1">預測均價</p>
+            <p className="text-3xl font-bold text-blue-700 tabular-nums">
+              {forecast?.forecast_value != null ? formatCurrency(forecast.forecast_value, 1) : '--'}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">元/公斤</p>
+            {forecast?.forecast_value != null && forecast?.lower_bound != null && (() => {
+              const mid = (forecast.lower_bound + forecast.upper_bound) / 2;
+              const diff = forecast.forecast_value - mid;
+              const isUp = diff > 0;
+              return (
+                <span className={`mt-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${isUp ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                  {isUp ? '↑' : '↓'} 趨勢{isUp ? '偏高' : '偏低'}
+                </span>
+              );
+            })()}
+          </div>
+
+          {/* Center: Confidence interval */}
+          <div className="rounded-xl bg-white p-5 shadow-sm">
+            <p className="text-xs font-medium text-gray-500 mb-1">預測區間</p>
+            <p className="text-xl font-bold text-gray-800 tabular-nums">
+              {forecast?.lower_bound != null && forecast?.upper_bound != null
+                ? `${formatCurrency(forecast.lower_bound, 1)} ~ ${formatCurrency(forecast.upper_bound, 1)}`
+                : '--'}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">95% 信賴區間</p>
+            {forecast?.lower_bound != null && forecast?.upper_bound != null && (() => {
+              const spread = forecast.upper_bound - forecast.lower_bound;
+              const mid = (forecast.upper_bound + forecast.lower_bound) / 2;
+              const spreadPct = mid > 0 ? (spread / mid) * 100 : 0;
+              const isNarrow = spreadPct < 10;
+              return (
+                <span className={`mt-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${isNarrow ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                  {isNarrow ? '區間較窄，信心高' : '區間較寬，波動大'}
+                </span>
+              );
+            })()}
+          </div>
+
+          {/* Right: Model accuracy */}
+          <div className="rounded-xl bg-white p-5 shadow-sm">
+            <p className="text-xs font-medium text-gray-500 mb-1">模型準確度</p>
+            {(() => {
+              const bestModel = (modelInfo || [])
+                .filter((m) => m.is_active && m.target_metric === 'price_avg' && m.region_type === 'national')
+                .sort((a, b) => (a.mape ?? Infinity) - (b.mape ?? Infinity))[0]
+                || (modelInfo || []).filter((m) => m.mape != null).sort((a, b) => (a.mape ?? Infinity) - (b.mape ?? Infinity))[0];
+              const mape = bestModel?.mape;
+              const accuracy = mape != null ? (100 - mape) : null;
+              const modelName = bestModel?.name ?? bestModel?.model_name ?? 'AI';
+              return (
+                <>
+                  <p className="text-3xl font-bold text-emerald-600 tabular-nums">
+                    {accuracy != null ? `${accuracy.toFixed(2)}%` : '--'}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {mape != null ? `MAPE ${mape.toFixed(2)}%` : '尚無模型數據'}
+                  </p>
+                  {modelName && mape != null && (
+                    <span className="mt-2 inline-block rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                      {modelName} 主導
+                    </span>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        </div>
+
+        {/* Summary text */}
+        <div className="mt-4">
+          <ForecastSummary horizon={horizon} />
+        </div>
+        <p className="text-xs text-gray-400 mt-2 px-1">預測基於歷史交易資料、天氣資料及颱風事件，使用 Prophet、SARIMA、XGBoost 三模型集成預測。</p>
+      </div>
+
+      {/* ============================================ */}
+      {/*  § 預測圖表詳情（可摺疊）                     */}
+      {/* ============================================ */}
+      <CollapsibleSection title="預測圖表詳情" subtitle="AI 模型價格預測圖表。圖表中藍線為歷史實際價格，虛線為模型預測。">
+        <div className="flex items-center justify-end gap-2">
+          <ExportButton url={`/export/predictions/${selectedCrop}`} filename={`${selectedCrop}_predictions.csv`} label="匯出預測" />
+        </div>
+
+        <ForecastPanel forecast={forecast ? {
+          value: forecast.forecast_value ?? forecast.value,
+          ciLower: forecast.lower_bound ?? forecast.ciLower,
+          ciUpper: forecast.upper_bound ?? forecast.ciUpper,
+          forecastDate: forecast.forecast_date ?? forecast.forecastDate,
+          generatedAt: forecast.generated_at ?? forecast.generatedAt,
+          modelName: forecast.model_name ?? forecast.modelName,
+          horizon: forecast.horizon_label ?? forecast.horizon,
+          cropName: forecast.crop_key ?? forecast.cropName,
+        } : null} loading={predLoading} />
+
+        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h3 className="mb-4 text-base font-semibold text-gray-800">歷史價格與預測走勢</h3>
+          <ForecastChart historicalData={historicalData} predictions={predictions} loading={predLoading || histLoading} typhoonEvents={typhoonEvents} />
+        </div>
+
+        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h3 className="mb-4 text-base font-semibold text-gray-800">價量雙軸比較</h3>
+          <PriceVolumeCompare data={historicalData} />
+        </div>
+
+        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h3 className="mb-4 text-base font-semibold text-gray-800">季節性年度比較</h3>
+          <SeasonalCompareChart data={(historicalData || []).map((d) => ({ date: d.period, value: d.price_avg ?? 0 }))} />
+        </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="颱風情境模擬" subtitle="根據歷史颱風對農產品價格的影響，模擬不同強度颱風來襲時的價格預測調整。">
+        <TyphoonSimulator />
+      </CollapsibleSection>
+
+      <CollapsibleSection title="近期資料快速預測" subtitle="將最近的實際交易均價與模型預測做比對，評估預測準確度。">
+        <RecentPredictionPanel />
+      </CollapsibleSection>
+
+      {/* ============================================ */}
+      {/*  § 進階分析（可摺疊）                         */}
+      {/* ============================================ */}
+      <CollapsibleSection title="模型成效分析" subtitle="三個預測模型（Prophet / SARIMA / XGBoost）的準確度比較、集成權重和影響因素排名。" defaultOpen={false}>
+        {/* Model accuracy comparison */}
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+            <h3 className="mb-2 text-base font-semibold text-gray-800">模型預測準確度</h3>
+            <p className="mb-4 text-xs text-gray-400">MAPE 越低代表預測越準確。Prophet 擅長季節性、XGBoost 擅長天氣因素。</p>
+            <ModelComparisonChart modelInfo={modelInfo} />
+          </div>
+          <ModelInfoPanel modelInfo={modelInfo} loading={predLoading} />
+        </div>
+
+        {/* Ensemble weights visualization */}
+        {forecast && (
+          <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+            <h3 className="mb-2 text-base font-semibold text-gray-800">模型集成權重</h3>
+            <p className="mb-4 text-xs text-gray-400">系統自動計算各模型的預測誤差，準確度越高的模型獲得越大的投票權重。</p>
+            {(() => {
+              const weights = forecast.ensemble_weights ? (typeof forecast.ensemble_weights === 'string' ? JSON.parse(forecast.ensemble_weights) : forecast.ensemble_weights) : null;
+              if (!weights) return <p className="text-sm text-gray-400">尚無集成權重資料</p>;
+              const total = Object.values(weights).reduce((a, b) => a + b, 0) || 1;
+              const modelColors = { prophet: '#3b82f6', sarima: '#f59e0b', xgboost: '#10b981' };
+              const modelLabels = { prophet: 'Prophet', sarima: 'SARIMA', xgboost: 'XGBoost' };
+              return (
+                <div>
+                  {/* Stacked bar */}
+                  <div className="flex h-10 overflow-hidden rounded-lg">
+                    {Object.entries(weights).map(([name, w]) => {
+                      const pct = (w / total) * 100;
+                      if (pct < 0.1) return null;
+                      return (
+                        <div key={name} style={{ width: `${pct}%`, backgroundColor: modelColors[name] || '#6b7280' }} className="flex items-center justify-center text-white text-xs font-bold transition-all">
+                          {pct > 10 ? `${modelLabels[name] || name} ${pct.toFixed(1)}%` : ''}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Legend */}
+                  <div className="mt-3 flex flex-wrap gap-4">
+                    {Object.entries(weights).map(([name, w]) => (
+                      <div key={name} className="flex items-center gap-2">
+                        <span className="h-3 w-3 rounded-full" style={{ backgroundColor: modelColors[name] || '#6b7280' }} />
+                        <span className="text-sm text-gray-600">{modelLabels[name] || name}</span>
+                        <span className="text-sm font-bold text-gray-800">{((w / total) * 100).toFixed(1)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs text-gray-400">權重越高代表該模型在此作物的預測越準確，系統會更信任它的預測結果。</p>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* Feature importance */}
+        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+          <h3 className="mb-2 text-base font-semibold text-gray-800">影響預測的關鍵因素</h3>
+          <p className="mb-3 text-xs text-gray-400">XGBoost 模型自動判斷哪些因素對價格預測影響最大。紅色=颱風因素、藍色=天氣因素、黃色=季節因素。</p>
+          <FeatureImportanceChart />
+        </div>
+      </CollapsibleSection>
+
+      {/* ============================================ */}
+      {/*  § 儀表板總覽（可摺疊）                       */}
+      {/* ============================================ */}
       <CollapsibleSection title="儀表板總覽" subtitle="各縣市交易與天氣數據視覺化。地圖顏色越深代表價格越高，灰色表示無交易紀錄。點擊縣市查看詳情。">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           <div className="space-y-6 lg:col-span-7">
@@ -743,79 +953,6 @@ export default function UnifiedPage() {
             <p className="mt-0.5 text-xs text-gray-400">{selectedCrop ?? '全部作物'}的交易紀錄</p>
           </div>
           <TradingDataTable data={tableData} loading={tableLoading} page={tradingPage} pageSize={tradingPageSize} totalCount={tableTotalCount} onPageChange={handleTradingPageChange} />
-        </div>
-      </CollapsibleSection>
-
-      {/* ============================================ */}
-      {/*  § 預測摘要（直接顯示）                       */}
-      {/* ============================================ */}
-      <ForecastSummary horizon={horizon} />
-      <p className="text-xs text-gray-400 mt-1 px-1">預測基於歷史交易資料、天氣資料及颱風事件，使用 Prophet、SARIMA、XGBoost 三模型集成預測。</p>
-
-      {/* ============================================ */}
-      {/*  § 預測結果詳情（可摺疊）                     */}
-      {/* ============================================ */}
-      <CollapsibleSection title="預測結果" subtitle="AI 模型價格預測圖表。可切換 1/3/6 個月預測期間，圖表中藍線為歷史實際價格，虛線為模型預測。">
-        <div className="flex items-center justify-end gap-2">
-          <span className="text-sm text-gray-500">預測期間:</span>
-          <div className="flex items-center rounded-lg bg-gray-100 p-0.5">
-            {horizonOptions.map((opt) => (
-              <button key={opt.value} onClick={() => setHorizon(opt.value)} className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${horizon === opt.value ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-600 hover:text-gray-800'}`}>{opt.label}</button>
-            ))}
-          </div>
-          <ExportButton url={`/export/predictions/${selectedCrop}`} filename={`${selectedCrop}_predictions.csv`} label="匯出預測" />
-        </div>
-
-        <ForecastPanel forecast={forecast ? {
-          value: forecast.forecast_value ?? forecast.value,
-          ciLower: forecast.lower_bound ?? forecast.ciLower,
-          ciUpper: forecast.upper_bound ?? forecast.ciUpper,
-          forecastDate: forecast.forecast_date ?? forecast.forecastDate,
-          generatedAt: forecast.generated_at ?? forecast.generatedAt,
-          modelName: forecast.model_name ?? forecast.modelName,
-          horizon: forecast.horizon_label ?? forecast.horizon,
-          cropName: forecast.crop_key ?? forecast.cropName,
-        } : null} loading={predLoading} />
-
-        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-          <h3 className="mb-4 text-base font-semibold text-gray-800">歷史價格與預測走勢</h3>
-          <ForecastChart historicalData={historicalData} predictions={predictions} loading={predLoading || histLoading} typhoonEvents={typhoonEvents} />
-        </div>
-
-        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-          <h3 className="mb-4 text-base font-semibold text-gray-800">價量雙軸比較</h3>
-          <PriceVolumeCompare data={historicalData} />
-        </div>
-
-        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-          <h3 className="mb-4 text-base font-semibold text-gray-800">季節性年度比較</h3>
-          <SeasonalCompareChart data={(historicalData || []).map((d) => ({ date: d.period, value: d.price_avg ?? 0 }))} />
-        </div>
-      </CollapsibleSection>
-
-      <CollapsibleSection title="颱風情境模擬" subtitle="根據歷史颱風對農產品價格的影響，模擬不同強度颱風來襲時的價格預測調整。">
-        <TyphoonSimulator />
-      </CollapsibleSection>
-
-      <CollapsibleSection title="近期資料快速預測" subtitle="將最近的實際交易均價與模型預測做比對，評估預測準確度。">
-        <RecentPredictionPanel />
-      </CollapsibleSection>
-
-      {/* ============================================ */}
-      {/*  § 進階分析（可摺疊）                         */}
-      {/* ============================================ */}
-      <CollapsibleSection title="進階分析" subtitle="模型效能指標（MAE/RMSE/MAPE）和影響預測的關鍵因素排名。紅色=颱風因素、藍色=天氣因素、黃色=季節因素。">
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-            <h3 className="mb-4 text-base font-semibold text-gray-800">模型效能比較</h3>
-            <ModelComparisonChart modelInfo={modelInfo} />
-          </div>
-          <ModelInfoPanel modelInfo={modelInfo} loading={predLoading} />
-        </div>
-        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-          <h3 className="mb-4 text-base font-semibold text-gray-800">特徵重要性分析</h3>
-          <p className="mb-3 text-xs text-gray-400">模型判斷各特徵對預測的影響程度</p>
-          <FeatureImportanceChart />
         </div>
       </CollapsibleSection>
 

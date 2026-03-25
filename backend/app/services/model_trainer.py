@@ -87,10 +87,15 @@ def _train_prophet(
         changepoint_prior_scale=prophet_cfg.get("changepoint_prior_scale", 0.05),
     )
 
-    # Register external regressors if present in the training data.
+    # Only use key weather/typhoon regressors (not all columns).
+    # Too many regressors cause Prophet to output flat predictions.
+    allowed_regressors = {
+        "temp_avg", "rainfall_mm", "is_typhoon_month",
+        "typhoon_intensity_max", "post_typhoon_1m",
+    }
     regressor_cols = [
         c for c in train_df.columns
-        if c not in ("ds", "y") and not c.startswith("_")
+        if c in allowed_regressors and train_df[c].notna().any()
     ]
     for col in regressor_cols:
         model.add_regressor(col)
@@ -534,15 +539,25 @@ class ModelTrainer:
 
         if model_type == "prophet":
             future_df = pd.DataFrame({"ds": future_dates})
-            # Carry forward regressor columns if they exist.
+            # Fill regressor columns with historical same-month averages
+            # instead of last known value (which causes flat predictions).
+            allowed_regressors = {
+                "temp_avg", "rainfall_mm", "is_typhoon_month",
+                "typhoon_intensity_max", "post_typhoon_1m",
+            }
             regressor_cols = [
-                c for c in full_df.columns
-                if c not in ("ds", "y") and not c.startswith("_")
+                c for c in full_df.columns if c in allowed_regressors
             ]
-            for col in regressor_cols:
-                # Use the last known value as a naive forward fill.
-                last_val = full_df[col].dropna().iloc[-1] if full_df[col].notna().any() else 0.0
-                future_df[col] = last_val
+            if regressor_cols:
+                hist = full_df.copy()
+                hist["_month"] = pd.to_datetime(hist["ds"]).dt.month
+                monthly_avg = hist.groupby("_month")[regressor_cols].mean()
+                for col in regressor_cols:
+                    future_df[col] = [
+                        monthly_avg.loc[d.month, col]
+                        if d.month in monthly_avg.index else 0.0
+                        for d in future_dates
+                    ]
 
             return _predict_prophet(model_obj, future_df)
 
