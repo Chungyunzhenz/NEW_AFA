@@ -48,7 +48,7 @@ HORIZON_MAP = {               # label -> months
     "3m": 3,
     "6m": 6,
 }
-MODEL_TYPES = ("prophet", "sarima", "xgboost")
+MODEL_TYPES = ("prophet", "sarima", "xgboost", "lightgbm")
 
 
 class PredictionEngine:

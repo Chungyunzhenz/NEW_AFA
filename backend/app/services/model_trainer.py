@@ -48,7 +48,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-MODEL_TYPES = ("prophet", "sarima", "xgboost")
+MODEL_TYPES = ("prophet", "sarima", "xgboost", "lightgbm")
 ARTIFACT_DIR = Path(settings.MODEL_DIR)
 
 
@@ -312,6 +312,52 @@ def _predict_xgboost(
     )
 
 
+def _train_lightgbm(
+    train_df: pd.DataFrame,
+    config: Dict[str, Any],
+    target_metric: str,
+) -> Tuple[Any, List[str]]:
+    """Fit a LightGBM regressor. Uses the same features as XGBoost."""
+    import lightgbm as lgb
+
+    featured = _build_xgb_features(train_df, config)
+    exclude = {"ds", "y"}
+    feature_cols = [
+        c for c in featured.columns
+        if c not in exclude and featured[c].notna().any()
+    ]
+    clean = featured.dropna(subset=feature_cols + ["y"])
+
+    X = clean[feature_cols].values
+    y = clean["y"].values
+
+    model = lgb.LGBMRegressor(
+        n_estimators=200,
+        max_depth=5,
+        learning_rate=0.05,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        reg_alpha=0.1,
+        reg_lambda=1.0,
+        random_state=42,
+        verbosity=-1,
+    )
+    model.fit(X, y)
+    return model, feature_cols
+
+
+def _predict_lightgbm(
+    model: Any,
+    feature_cols: List[str],
+    full_history_df: pd.DataFrame,
+    n_periods: int,
+    future_dates: pd.DatetimeIndex,
+    config: Dict[str, Any],
+) -> pd.DataFrame:
+    """Generate predictions from LightGBM. Same recursive strategy as XGBoost."""
+    return _predict_xgboost(model, feature_cols, full_history_df, n_periods, future_dates, config)
+
+
 # ---------------------------------------------------------------------------
 # Stdout suppression context manager (for Prophet)
 # ---------------------------------------------------------------------------
@@ -417,6 +463,10 @@ class ModelTrainer:
                 model_obj, feature_cols = _train_xgboost(
                     train_df, crop_config, target_metric
                 )
+            elif model_type == "lightgbm":
+                model_obj, feature_cols = _train_lightgbm(
+                    train_df, crop_config, target_metric
+                )
 
             result["model_object"] = model_obj
             result["feature_cols"] = feature_cols
@@ -438,7 +488,7 @@ class ModelTrainer:
 
             # ---- Extract feature importance (XGBoost) ----
             feature_importance_json = None
-            if model_type == "xgboost" and hasattr(model_obj, 'feature_importances_'):
+            if model_type in ("xgboost", "lightgbm") and hasattr(model_obj, 'feature_importances_'):
                 fi = dict(zip(feature_cols, model_obj.feature_importances_.tolist()))
                 # Sort and keep top 20
                 fi_sorted = dict(sorted(fi.items(), key=lambda x: x[1], reverse=True)[:20])
@@ -512,6 +562,13 @@ class ModelTrainer:
                 pd.DatetimeIndex(val_dates), crop_config,
             )
             y_pred = pred_df["yhat"].values[:n_val]
+
+        elif model_type == "lightgbm":
+            pred_df = _predict_lightgbm(
+                model_obj, feature_cols, train_df, n_val,
+                pd.DatetimeIndex(val_dates), crop_config,
+            )
+            y_pred = pred_df["yhat"].values[:n_val]
         else:
             raise ValueError(f"Unknown model_type: {model_type}")
 
@@ -566,6 +623,12 @@ class ModelTrainer:
 
         elif model_type == "xgboost":
             return _predict_xgboost(
+                model_obj, feature_cols, full_df, horizon,
+                future_dates, crop_config,
+            )
+
+        elif model_type == "lightgbm":
+            return _predict_lightgbm(
                 model_obj, feature_cols, full_df, horizon,
                 future_dates, crop_config,
             )
