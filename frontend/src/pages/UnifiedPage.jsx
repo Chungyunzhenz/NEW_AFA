@@ -320,12 +320,38 @@ function TradingDataTable({ data, loading, page, pageSize, totalCount, onPageCha
 /*  Forecast: Combined chart                                     */
 /* ============================================================ */
 function ForecastChart({ historicalData, predictions, loading, typhoonEvents = [] }) {
+  const MODEL_COLORS = { prophet: '#3b82f6', sarima: '#f59e0b', xgboost: '#10b981', lightgbm: '#8b5cf6', ensemble: '#111827' };
+  const MODEL_LABELS = { prophet: 'Prophet', sarima: 'SARIMA', xgboost: 'XGBoost', lightgbm: 'LightGBM', ensemble: '集成預測' };
+
   const chartData = useMemo(() => {
-    const hist = (historicalData || []).map((d) => ({ date: d.period, actual: d.price_avg ?? null, predicted: null, ciUpper: null, ciLower: null }));
-    const pred = (Array.isArray(predictions) ? predictions : []).map((d) => ({ date: d.date ?? d.forecastDate ?? d.forecast_date, actual: null, predicted: d.value ?? d.predicted ?? d.forecast_value ?? null, ciUpper: d.ciUpper ?? d.ci_upper ?? null, ciLower: d.ciLower ?? d.ci_lower ?? null }));
+    const hist = (historicalData || []).map((d) => ({ date: d.period, actual: d.price_avg ?? null }));
+
+    // Group predictions by date, with each model as a separate field
+    const predItems = Array.isArray(predictions) ? predictions : [];
+    const predMap = {};
+    for (const d of predItems) {
+      const date = d.forecast_date ?? d.date ?? d.forecastDate;
+      const model = d.model_name ?? d.modelName ?? 'ensemble';
+      const value = d.forecast_value ?? d.value ?? d.predicted;
+      if (!date || value == null) continue;
+      if (!predMap[date]) predMap[date] = { date };
+      predMap[date][model] = value;
+      if (model === 'ensemble') {
+        predMap[date].ciUpper = d.upper_bound ?? d.ciUpper ?? null;
+        predMap[date].ciLower = d.lower_bound ?? d.ciLower ?? null;
+      }
+    }
+    const predRows = Object.values(predMap).sort((a, b) => (a.date > b.date ? 1 : -1));
+
+    // Merge
     const merged = [...hist];
-    if (hist.length > 0 && pred.length > 0) { const lastActual = hist[hist.length - 1]; merged.push({ ...lastActual, predicted: lastActual.actual, ciUpper: lastActual.actual, ciLower: lastActual.actual }); }
-    merged.push(...pred);
+    if (hist.length > 0 && predRows.length > 0) {
+      const last = hist[hist.length - 1];
+      const bridge = { date: last.date, actual: last.actual };
+      for (const m of Object.keys(MODEL_COLORS)) bridge[m] = last.actual;
+      merged.push(bridge);
+    }
+    merged.push(...predRows);
     return merged;
   }, [historicalData, predictions]);
 
@@ -335,29 +361,41 @@ function ForecastChart({ historicalData, predictions, loading, typhoonEvents = [
   if (!chartData.length) return <div className="flex h-96 items-center justify-center text-sm text-gray-400">請選擇作物以查看預測圖表</div>;
 
   return (
-    <ResponsiveContainer width="100%" height={400}>
+    <ResponsiveContainer width="100%" height={420}>
       <ComposedChart data={chartData} margin={{ top: 12, right: 24, left: 8, bottom: 8 }}>
-        <defs><linearGradient id="ciGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#818cf8" stopOpacity={0.3} /><stop offset="95%" stopColor="#818cf8" stopOpacity={0.05} /></linearGradient></defs>
+        <defs><linearGradient id="ciGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#818cf8" stopOpacity={0.2} /><stop offset="95%" stopColor="#818cf8" stopOpacity={0.02} /></linearGradient></defs>
         <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
         <XAxis dataKey="date" tickFormatter={(v) => formatDate(v, 'MM/dd')} tick={{ fontSize: 12, fill: '#6b7280' }} tickLine={false} axisLine={{ stroke: '#d1d5db' }} minTickGap={40} />
         <YAxis tick={{ fontSize: 12, fill: '#6b7280' }} tickFormatter={(v) => `$${formatNumber(v)}`} tickLine={false} axisLine={false} label={{ value: '價格 (NT$)', angle: -90, position: 'insideLeft', offset: -4, style: { fontSize: 12, fill: '#9ca3af' } }} />
-        <Tooltip content={({ active, payload, label }) => { if (!active || !payload?.length) return null; const d = payload[0]?.payload; return (<div className="rounded-lg border border-gray-200 bg-white p-3 text-sm shadow-lg"><p className="mb-1.5 font-medium text-gray-700">{formatDate(label)}</p>{d?.actual != null && <p className="text-blue-600">實際值: {formatCurrency(d.actual, 1)}</p>}{d?.predicted != null && <p className="text-indigo-600">預測值: {formatCurrency(d.predicted, 1)}</p>}{d?.ciLower != null && d?.ciUpper != null && <p className="text-gray-400">CI: {formatCurrency(d.ciLower, 1)} ~ {formatCurrency(d.ciUpper, 1)}</p>}</div>); }} />
-        <Legend wrapperStyle={{ fontSize: 13 }} formatter={(v) => v === 'actual' ? '實際價格' : v === 'predicted' ? '預測價格' : '信賴區間'} />
+        <Tooltip content={({ active, payload, label }) => {
+          if (!active || !payload?.length) return null;
+          const d = payload[0]?.payload;
+          return (
+            <div className="rounded-lg border border-gray-200 bg-white p-3 text-sm shadow-lg min-w-[180px]">
+              <p className="mb-2 font-medium text-gray-700">{formatDate(label)}</p>
+              {d?.actual != null && <p className="text-blue-600 font-medium">實際價格: {formatCurrency(d.actual, 1)}</p>}
+              {d?.ensemble != null && <p className="font-bold text-gray-900 mt-1">集成預測: {formatCurrency(d.ensemble, 1)}</p>}
+              <div className="mt-1 pt-1 border-t border-gray-100 space-y-0.5">
+                {d?.prophet != null && <p style={{color: MODEL_COLORS.prophet}}>Prophet: {formatCurrency(d.prophet, 1)}</p>}
+                {d?.sarima != null && <p style={{color: MODEL_COLORS.sarima}}>SARIMA: {formatCurrency(d.sarima, 1)}</p>}
+                {d?.xgboost != null && <p style={{color: MODEL_COLORS.xgboost}}>XGBoost: {formatCurrency(d.xgboost, 1)}</p>}
+                {d?.lightgbm != null && <p style={{color: MODEL_COLORS.lightgbm}}>LightGBM: {formatCurrency(d.lightgbm, 1)}</p>}
+              </div>
+            </div>
+          );
+        }} />
+        <Legend wrapperStyle={{ fontSize: 12 }} />
         <Area type="monotone" dataKey="ciUpper" stroke="none" fill="url(#ciGradient)" name="ciUpper" legendType="none" />
         <Area type="monotone" dataKey="ciLower" stroke="none" fill="#ffffff" name="ciLower" legendType="none" />
         {boundaryDate && <ReferenceLine x={boundaryDate} stroke="#9ca3af" strokeDasharray="4 4" label={{ value: '預測起點', position: 'top', style: { fontSize: 11, fill: '#9ca3af' } }} />}
-        <Line type="monotone" dataKey="actual" stroke="#3b82f6" strokeWidth={2} dot={false} activeDot={{ r: 4, fill: '#3b82f6' }} name="actual" connectNulls={false} />
-        <Line type="monotone" dataKey="predicted" stroke="#6366f1" strokeWidth={2} strokeDasharray="6 3" dot={false} activeDot={{ r: 4, fill: '#6366f1' }} name="predicted" connectNulls={false} />
+        <Line type="monotone" dataKey="actual" stroke="#3b82f6" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} name="實際價格" connectNulls={false} />
+        <Line type="monotone" dataKey="ensemble" stroke={MODEL_COLORS.ensemble} strokeWidth={3} strokeDasharray="0" dot={{ r: 3, fill: MODEL_COLORS.ensemble }} name="集成預測" connectNulls={false} />
+        <Line type="monotone" dataKey="prophet" stroke={MODEL_COLORS.prophet} strokeWidth={1.5} strokeDasharray="6 3" dot={false} name="Prophet" connectNulls={false} opacity={0.7} />
+        <Line type="monotone" dataKey="sarima" stroke={MODEL_COLORS.sarima} strokeWidth={1.5} strokeDasharray="6 3" dot={false} name="SARIMA" connectNulls={false} opacity={0.7} />
+        <Line type="monotone" dataKey="xgboost" stroke={MODEL_COLORS.xgboost} strokeWidth={1.5} strokeDasharray="6 3" dot={false} name="XGBoost" connectNulls={false} opacity={0.7} />
+        <Line type="monotone" dataKey="lightgbm" stroke={MODEL_COLORS.lightgbm} strokeWidth={1.5} strokeDasharray="6 3" dot={false} name="LightGBM" connectNulls={false} opacity={0.7} />
         {typhoonEvents.map((evt, idx) => (
-          <ReferenceArea
-            key={`typhoon-${idx}`}
-            x1={evt.startDate ?? evt.start_date}
-            x2={evt.endDate ?? evt.end_date}
-            fill="#ef444420"
-            stroke="#ef444440"
-            strokeDasharray="3 3"
-            label={{ value: evt.name ?? evt.typhoonName ?? `颱風${idx + 1}`, position: 'top', style: { fontSize: 11, fill: '#ef4444', fontWeight: 600 } }}
-          />
+          <ReferenceArea key={`typhoon-${idx}`} x1={evt.startDate ?? evt.start_date} x2={evt.endDate ?? evt.end_date} fill="#ef444420" stroke="#ef444440" strokeDasharray="3 3" label={{ value: evt.name ?? evt.typhoonName ?? '', position: 'top', style: { fontSize: 10, fill: '#ef4444' } }} />
         ))}
       </ComposedChart>
     </ResponsiveContainer>
@@ -464,7 +502,7 @@ function PriceVolumeCompare({ data }) {
 /*  Forecast: Model comparison chart                             */
 /* ============================================================ */
 function ModelComparisonChart({ modelInfo }) {
-  const chartData = useMemo(() => { if (!modelInfo?.length) return []; return modelInfo.map((m) => ({ name: m.name ?? 'Unknown', MAE: m.mae ?? 0, RMSE: m.rmse ?? 0, MAPE: m.mape ?? 0 })); }, [modelInfo]);
+  const chartData = useMemo(() => { if (!modelInfo?.length) return []; return modelInfo.map((m) => ({ name: m.name ?? 'Unknown', MSE: m.mse ?? 0, RMSE: m.rmse ?? 0, MAE: m.mae ?? 0, 'R²': m.r_squared ?? 0 })); }, [modelInfo]);
   if (!chartData.length) return <div className="flex h-64 items-center justify-center text-sm text-gray-400">暫無模型比較資料</div>;
   return (
     <ResponsiveContainer width="100%" height={300}>
@@ -472,11 +510,12 @@ function ModelComparisonChart({ modelInfo }) {
         <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
         <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#6b7280' }} tickLine={false} axisLine={{ stroke: '#d1d5db' }} />
         <YAxis tick={{ fontSize: 12, fill: '#6b7280' }} tickLine={false} axisLine={false} />
-        <Tooltip content={({ active, payload, label }) => { if (!active || !payload?.length) return null; return (<div className="rounded-lg border border-gray-200 bg-white p-3 text-sm shadow-lg"><p className="mb-1 font-semibold text-gray-700">{label}</p>{payload.map((p) => (<p key={p.dataKey} style={{ color: p.color }}>{p.dataKey}: {p.dataKey === 'MAPE' ? `${p.value.toFixed(1)}%` : p.value.toFixed(2)}</p>))}</div>); }} />
+        <Tooltip content={({ active, payload, label }) => { if (!active || !payload?.length) return null; return (<div className="rounded-lg border border-gray-200 bg-white p-3 text-sm shadow-lg"><p className="mb-1 font-semibold text-gray-700">{label}</p>{payload.map((p) => (<p key={p.dataKey} style={{ color: p.color }}>{p.dataKey}: {p.value.toFixed(4)}</p>))}</div>); }} />
         <Legend wrapperStyle={{ fontSize: 13 }} />
-        <Bar dataKey="MAE" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="MSE" fill="#f97316" radius={[4, 4, 0, 0]} />
         <Bar dataKey="RMSE" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-        <Bar dataKey="MAPE" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="MAE" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="R²" fill="#10b981" radius={[4, 4, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );
@@ -741,24 +780,23 @@ export default function UnifiedPage() {
 
           {/* Right: Model accuracy */}
           <div className="rounded-xl bg-white p-5 shadow-sm">
-            <p className="text-xs font-medium text-gray-500 mb-1">模型準確度</p>
+            <p className="text-xs font-medium text-gray-500 mb-1">模型準確度 (R²)</p>
             {(() => {
               const bestModel = (modelInfo || [])
                 .filter((m) => m.is_active && m.target_metric === 'price_avg' && m.region_type === 'national')
-                .sort((a, b) => (a.mape ?? Infinity) - (b.mape ?? Infinity))[0]
-                || (modelInfo || []).filter((m) => m.mape != null).sort((a, b) => (a.mape ?? Infinity) - (b.mape ?? Infinity))[0];
-              const mape = bestModel?.mape;
-              const accuracy = mape != null ? (100 - mape) : null;
+                .sort((a, b) => (b.r_squared ?? -Infinity) - (a.r_squared ?? -Infinity))[0]
+                || (modelInfo || []).filter((m) => m.r_squared != null).sort((a, b) => (b.r_squared ?? -Infinity) - (a.r_squared ?? -Infinity))[0];
+              const r2 = bestModel?.r_squared;
               const modelName = bestModel?.name ?? bestModel?.model_name ?? 'AI';
               return (
                 <>
                   <p className="text-3xl font-bold text-emerald-600 tabular-nums">
-                    {accuracy != null ? `${accuracy.toFixed(2)}%` : '--'}
+                    {r2 != null ? r2.toFixed(4) : '--'}
                   </p>
                   <p className="text-xs text-gray-400 mt-1">
-                    {mape != null ? `MAPE ${mape.toFixed(2)}%` : '尚無模型數據'}
+                    {r2 != null ? `MAE ${(bestModel?.mae ?? 0).toFixed(2)}` : '尚無模型數據'}
                   </p>
-                  {modelName && mape != null && (
+                  {modelName && r2 != null && (
                     <span className="mt-2 inline-block rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
                       {modelName} 主導
                     </span>
@@ -822,12 +860,12 @@ export default function UnifiedPage() {
       {/* ============================================ */}
       {/*  § 進階分析（可摺疊）                         */}
       {/* ============================================ */}
-      <CollapsibleSection title="模型成效分析" subtitle="三個預測模型（Prophet / SARIMA / XGBoost）的準確度比較、集成權重和影響因素排名。" defaultOpen={false}>
+      <CollapsibleSection title="模型成效分析" subtitle="四個預測模型（Prophet / SARIMA / XGBoost / LightGBM）的準確度比較、集成權重和影響因素排名。" defaultOpen={false}>
         {/* Model accuracy comparison */}
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
             <h3 className="mb-2 text-base font-semibold text-gray-800">模型預測準確度</h3>
-            <p className="mb-4 text-xs text-gray-400">MAPE 越低代表預測越準確。Prophet 擅長季節性、XGBoost 擅長天氣因素。</p>
+            <p className="mb-4 text-xs text-gray-400">R² 越接近 1 代表預測越準確。MSE/RMSE/MAE 越低越好。</p>
             <ModelComparisonChart modelInfo={modelInfo} />
           </div>
           <ModelInfoPanel modelInfo={modelInfo} loading={predLoading} />

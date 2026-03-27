@@ -26,7 +26,7 @@
 二、各資料表說明
 ------------------------------------------------------------
 
-1. crops (作物表) - 20筆
+1. crops (作物表) - 22筆
    - 主鍵：id
    - 欄位：crop_key(代碼), display_name_zh(中文名), is_active(啟用)
    - 關聯：被 trading_data, production_data, predictions 參照
@@ -80,9 +80,9 @@
 
 9. model_registry (模型紀錄) - 337筆
    - 主鍵：id
-   - 欄位：crop_id(作物), model_type(prophet/sarima/xgboost),
-           mae/rmse/mape(評估指標), is_active(啟用中),
-           feature_importance_json(特徵重要性)
+   - 欄位：crop_id(作物), model_type(prophet/sarima/xgboost/lightgbm),
+           mse/rmse/mae/r_squared(評估指標), mape(內部集成權重用),
+           is_active(啟用中), feature_importance_json(特徵重要性)
    - 關聯：屬於某個 crop
 
 10. typhoon_affected_counties (颱風影響縣市) - 0筆(待建置)
@@ -135,15 +135,17 @@
   │   extreme_rainfall_flag                      │
   └────────────────────────────────────────────┘
 
-步驟 5：模型訓練（三個模型）
+步驟 5：模型訓練（四個模型）
   Prophet  - Facebook 時間序列模型，擅長季節性
   SARIMA   - 統計時間序列模型，擅長趨勢
   XGBoost  - 梯度提升樹，擅長非線性關係
+  LightGBM - 輕量梯度提升機，訓練速度快、記憶體效率高
 
 步驟 6：集成預測
-  三個模型各自預測 → 用反向 MAPE 加權合併
+  四個模型各自預測 → 用反向 MAPE 加權合併
   權重公式：weight_i = (1/MAPE_i) / 所有(1/MAPE_j)的總和
   → 誤差越小的模型權重越高
+  信賴區間：取各模型中最保守的上下界
 
 
 四、前端呈現與資料對應
@@ -162,8 +164,9 @@
 預測摘要     ← 預測結果 + 交易資料（趨勢比較）
 地圖         ← 交易資料 + 天氣資料（按縣市彙總）
 預測圖表     ← 預測結果 + 交易資料（歷史+預測）
+模型對比     ← 模型紀錄（四模型 MSE/RMSE/MAE/R² 比較）
 颱風模擬     ← 颱風事件 + 預測結果 + 交易資料
-特徵重要性   ← 模型紀錄（XGBoost feature_importances）
+特徵重要性   ← 模型紀錄（XGBoost/LightGBM feature_importances）
 
 
 五、技術架構
@@ -171,7 +174,7 @@
 
 後端：Python 3.10 + FastAPI + SQLAlchemy + SQLite
 前端：React 19 + Vite + Recharts + Tailwind CSS + Zustand
-ML  ：Prophet + SARIMA (pmdarima) + XGBoost
+ML  ：Prophet + SARIMA (pmdarima) + XGBoost + LightGBM
 
 資料流：
   API 抓取 → SQLite 儲存 → 月度彙總 → 特徵工程 → 模型訓練

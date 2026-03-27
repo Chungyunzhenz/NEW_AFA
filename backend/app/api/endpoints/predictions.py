@@ -192,9 +192,10 @@ def get_model_info(
         results.append(
             ModelInfoResponse(
                 model_type=m.model_type,
-                mae=m.mae or 0.0,
+                mse=m.mse or 0.0,
                 rmse=m.rmse or 0.0,
-                mape=m.mape or 0.0,
+                mae=m.mae or 0.0,
+                r_squared=m.r_squared or 0.0,
                 trained_at=m.trained_at,
                 training_rows=m.training_rows or 0,
                 is_active=m.is_active,
@@ -273,9 +274,10 @@ def get_model_accuracy(crop_key: str, db: Session = Depends(get_db)):
                 "model_type": m.model_type,
                 "target_metric": m.target_metric,
                 "region_type": m.region_type,
-                "mae": round(m.mae, 4) if m.mae else None,
+                "mse": round(m.mse, 4) if m.mse else None,
                 "rmse": round(m.rmse, 4) if m.rmse else None,
-                "mape": round(m.mape, 2) if m.mape else None,
+                "mae": round(m.mae, 4) if m.mae else None,
+                "r_squared": round(m.r_squared, 4) if m.r_squared else None,
                 "training_rows": m.training_rows,
             }
     return {"models": list(results.values())}

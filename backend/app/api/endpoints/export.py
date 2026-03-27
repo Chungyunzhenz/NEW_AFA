@@ -128,13 +128,13 @@ def export_model_performance(
 
     headers = [
         "crop_key", "model_type", "region_type", "region_id",
-        "target_metric", "mae", "rmse", "mape",
+        "target_metric", "mse", "rmse", "mae", "r_squared",
         "training_rows", "trained_at", "is_active",
     ]
     data = [
         [
             crop_key, r.model_type, r.region_type, r.region_id,
-            r.target_metric, r.mae, r.rmse, r.mape,
+            r.target_metric, r.mse, r.rmse, r.mae, r.r_squared,
             r.training_rows, str(r.trained_at) if r.trained_at else "", r.is_active,
         ]
         for r, crop_key in rows

@@ -1,6 +1,6 @@
 """Model evaluation utilities for the agricultural prediction pipeline.
 
-Provides metric computation (MAE, RMSE, MAPE), model comparison on a
+Provides metric computation (MSE, RMSE, MAE, R², MAPE), model comparison on a
 validation set, and expanding-window cross-validation.
 
 Usage::
@@ -30,15 +30,19 @@ logger = logging.getLogger(__name__)
 class EvaluationMetrics:
     """Container for a single model's evaluation metrics."""
 
-    mae: float = 0.0
+    mse: float = 0.0
     rmse: float = 0.0
-    mape: float = float("inf")
+    mae: float = 0.0
+    r_squared: float = 0.0
+    mape: float = float("inf")  # kept for ensemble weighting
     n_samples: int = 0
 
     def to_dict(self) -> Dict[str, float]:
         return {
-            "mae": round(self.mae, 6),
+            "mse": round(self.mse, 6),
             "rmse": round(self.rmse, 6),
+            "mae": round(self.mae, 6),
+            "r_squared": round(self.r_squared, 6),
             "mape": round(self.mape, 6),
             "n_samples": self.n_samples,
         }
@@ -50,13 +54,14 @@ class ModelComparisonResult:
 
     model_metrics: Dict[str, EvaluationMetrics] = field(default_factory=dict)
     best_model: Optional[str] = None
-    best_mape: float = float("inf")
+    best_mape: float = float("inf")  # used internally for ranking
+    best_r_squared: float = float("-inf")
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "models": {k: v.to_dict() for k, v in self.model_metrics.items()},
             "best_model": self.best_model,
-            "best_mape": round(self.best_mape, 6),
+            "best_r_squared": round(self.best_r_squared, 6),
         }
 
 
@@ -76,8 +81,10 @@ class CrossValidationResult:
 
     model_name: str = ""
     folds: List[CVFoldResult] = field(default_factory=list)
-    mean_mae: float = 0.0
+    mean_mse: float = 0.0
     mean_rmse: float = 0.0
+    mean_mae: float = 0.0
+    mean_r_squared: float = 0.0
     mean_mape: float = float("inf")
     std_mape: float = 0.0
 
@@ -85,8 +92,10 @@ class CrossValidationResult:
         return {
             "model_name": self.model_name,
             "n_folds": len(self.folds),
-            "mean_mae": round(self.mean_mae, 6),
+            "mean_mse": round(self.mean_mse, 6),
             "mean_rmse": round(self.mean_rmse, 6),
+            "mean_mae": round(self.mean_mae, 6),
+            "mean_r_squared": round(self.mean_r_squared, 6),
             "mean_mape": round(self.mean_mape, 6),
             "std_mape": round(self.std_mape, 6),
             "folds": [
@@ -113,7 +122,7 @@ class ModelEvaluator:
         y_pred: np.ndarray,
         clip_mape: float = 200.0,
     ) -> EvaluationMetrics:
-        """Compute MAE, RMSE, and MAPE for a pair of arrays.
+        """Compute MSE, RMSE, MAE, R², and MAPE for a pair of arrays.
 
         Parameters
         ----------
@@ -151,10 +160,16 @@ class ModelEvaluator:
         errors = y_true - y_pred
         abs_errors = np.abs(errors)
 
+        mse = float(np.mean(errors ** 2))
+        rmse = float(np.sqrt(mse))
         mae = float(np.mean(abs_errors))
-        rmse = float(np.sqrt(np.mean(errors ** 2)))
 
-        # MAPE — guard against division by zero
+        # R² (coefficient of determination)
+        ss_res = float(np.sum(errors ** 2))
+        ss_tot = float(np.sum((y_true - np.mean(y_true)) ** 2))
+        r_squared = 1.0 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
+
+        # MAPE — guard against division by zero (kept for ensemble weighting)
         nonzero_mask = y_true != 0
         if nonzero_mask.any():
             pct_errors = np.abs(errors[nonzero_mask] / y_true[nonzero_mask]) * 100.0
@@ -162,7 +177,10 @@ class ModelEvaluator:
         else:
             mape = float("inf")
 
-        return EvaluationMetrics(mae=mae, rmse=rmse, mape=mape, n_samples=n)
+        return EvaluationMetrics(
+            mse=mse, rmse=rmse, mae=mae, r_squared=r_squared,
+            mape=mape, n_samples=n,
+        )
 
     # ------------------------------------------------------------------
     # Model comparison
@@ -196,16 +214,18 @@ class ModelEvaluator:
                 metrics = self.compute_metrics(y_true, y_pred)
                 result.model_metrics[name] = metrics
                 logger.info(
-                    "Model '%s': MAE=%.4f, RMSE=%.4f, MAPE=%.2f%% (n=%d)",
+                    "Model '%s': MSE=%.4f, RMSE=%.4f, MAE=%.4f, R²=%.4f (n=%d)",
                     name,
-                    metrics.mae,
+                    metrics.mse,
                     metrics.rmse,
-                    metrics.mape,
+                    metrics.mae,
+                    metrics.r_squared,
                     metrics.n_samples,
                 )
 
                 if metrics.mape < result.best_mape:
                     result.best_mape = metrics.mape
+                    result.best_r_squared = metrics.r_squared
                     result.best_model = name
 
             except Exception:
@@ -214,9 +234,9 @@ class ModelEvaluator:
 
         if result.best_model:
             logger.info(
-                "Best model: '%s' with MAPE=%.2f%%.",
+                "Best model: '%s' with R²=%.4f.",
                 result.best_model,
-                result.best_mape,
+                result.best_r_squared,
             )
         return result
 
@@ -293,8 +313,10 @@ class ModelEvaluator:
             )
             return cv_result
 
-        maes: List[float] = []
+        mses: List[float] = []
         rmses: List[float] = []
+        maes: List[float] = []
+        r_squareds: List[float] = []
         mapes: List[float] = []
 
         for fold_idx, (val_start, val_end) in enumerate(fold_ends, start=1):
@@ -315,21 +337,24 @@ class ModelEvaluator:
                 metrics = self.compute_metrics(y_true, y_pred)
                 fold_result.metrics = metrics
 
-                maes.append(metrics.mae)
+                mses.append(metrics.mse)
                 rmses.append(metrics.rmse)
+                maes.append(metrics.mae)
+                r_squareds.append(metrics.r_squared)
                 if np.isfinite(metrics.mape):
                     mapes.append(metrics.mape)
 
                 logger.info(
                     "CV fold %d/%d: train=%d, val=%d — "
-                    "MAE=%.4f, RMSE=%.4f, MAPE=%.2f%%",
+                    "MSE=%.4f, RMSE=%.4f, MAE=%.4f, R²=%.4f",
                     fold_idx,
                     len(fold_ends),
                     len(train_subset),
                     len(val_subset),
-                    metrics.mae,
+                    metrics.mse,
                     metrics.rmse,
-                    metrics.mape,
+                    metrics.mae,
+                    metrics.r_squared,
                 )
             except Exception:
                 logger.exception("Error in CV fold %d for model '%s'.", fold_idx, model_name)
@@ -337,22 +362,26 @@ class ModelEvaluator:
             cv_result.folds.append(fold_result)
 
         # Aggregate fold metrics.
-        if maes:
-            cv_result.mean_mae = float(np.mean(maes))
+        if mses:
+            cv_result.mean_mse = float(np.mean(mses))
         if rmses:
             cv_result.mean_rmse = float(np.mean(rmses))
+        if maes:
+            cv_result.mean_mae = float(np.mean(maes))
+        if r_squareds:
+            cv_result.mean_r_squared = float(np.mean(r_squareds))
         if mapes:
             cv_result.mean_mape = float(np.mean(mapes))
             cv_result.std_mape = float(np.std(mapes))
 
         logger.info(
-            "CV complete for '%s': mean_MAE=%.4f, mean_RMSE=%.4f, "
-            "mean_MAPE=%.2f%% (+/-%.2f%%), %d folds.",
+            "CV complete for '%s': mean_MSE=%.4f, mean_RMSE=%.4f, "
+            "mean_MAE=%.4f, mean_R²=%.4f, %d folds.",
             model_name,
-            cv_result.mean_mae,
+            cv_result.mean_mse,
             cv_result.mean_rmse,
-            cv_result.mean_mape,
-            cv_result.std_mape,
+            cv_result.mean_mae,
+            cv_result.mean_r_squared,
             len(cv_result.folds),
         )
         return cv_result

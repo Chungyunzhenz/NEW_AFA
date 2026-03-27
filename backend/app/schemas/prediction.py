@@ -33,9 +33,10 @@ class PredictionByCounty(BaseModel):
 
 class ModelInfoResponse(BaseModel):
     model_type: str
-    mae: float
+    mse: float
     rmse: float
-    mape: float
+    mae: float
+    r_squared: float
     trained_at: datetime
     training_rows: int
     is_active: bool

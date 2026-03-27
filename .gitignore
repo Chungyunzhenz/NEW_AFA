@@ -39,6 +39,9 @@ Thumbs.db
 # Data archive
 data_archive/
 
+# CSV exports
+csv_export/
+
 # Downloaded data (CODiS CSVs, etc.)
 data/codis_downloads/
 

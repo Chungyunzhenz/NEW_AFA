@@ -208,9 +208,10 @@ function ModelComparisonChart({ modelInfo }) {
     if (!modelInfo?.length) return [];
     return modelInfo.map((m) => ({
       name: m.name ?? 'Unknown',
-      MAE: m.mae ?? 0,
+      MSE: m.mse ?? 0,
       RMSE: m.rmse ?? 0,
-      MAPE: m.mape ?? 0,
+      MAE: m.mae ?? 0,
+      'R²': m.r_squared ?? 0,
     }));
   }, [modelInfo]);
 
@@ -245,7 +246,7 @@ function ModelComparisonChart({ modelInfo }) {
                 <p className="mb-1 font-semibold text-gray-700">{label}</p>
                 {payload.map((p) => (
                   <p key={p.dataKey} style={{ color: p.color }}>
-                    {p.dataKey}: {p.dataKey === 'MAPE' ? `${p.value.toFixed(1)}%` : p.value.toFixed(2)}
+                    {p.dataKey}: {p.value.toFixed(4)}
                   </p>
                 ))}
               </div>
@@ -253,9 +254,10 @@ function ModelComparisonChart({ modelInfo }) {
           }}
         />
         <Legend wrapperStyle={{ fontSize: 13 }} />
-        <Bar dataKey="MAE" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="MSE" fill="#f97316" radius={[4, 4, 0, 0]} />
         <Bar dataKey="RMSE" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-        <Bar dataKey="MAPE" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="MAE" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="R²" fill="#10b981" radius={[4, 4, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );

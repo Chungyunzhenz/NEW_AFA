@@ -47,7 +47,7 @@ export default function usePredictions({ horizon = '1m' } = {}) {
       try {
         // Fetch forecast and model info in parallel
         const [forecastResult, modelResult] = await Promise.all([
-          getForecast({ crop: selectedCrop, horizon, metric: metric || 'price_avg' }).catch((err) => {
+          getForecast({ crop: selectedCrop, horizon, metric: metric || 'price_avg', region_type: 'national', limit: 500 }).catch((err) => {
             console.warn('[usePredictions] forecast fetch failed:', err.message);
             return null;
           }),
@@ -79,11 +79,15 @@ export default function usePredictions({ horizon = '1m' } = {}) {
           setForecast(null);
         }
 
-        // Process model info
+        // Process model info — map model_type to name for display
         if (modelResult) {
-          const models = Array.isArray(modelResult)
+          const raw = Array.isArray(modelResult)
             ? modelResult
             : modelResult.models ?? [];
+          const models = raw.map((m) => ({
+            ...m,
+            name: m.name ?? m.model_type ?? 'Unknown',
+          }));
           setModelInfo(models);
         } else {
           setModelInfo([]);

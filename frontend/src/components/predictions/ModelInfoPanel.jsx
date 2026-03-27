@@ -44,11 +44,11 @@ function ActiveIndicator({ active }) {
 export default function ModelInfoPanel({ modelInfo = [], loading = false }) {
   // Compute maxima for relative bar charts
   const maxValues = useMemo(() => {
-    if (!modelInfo.length) return { mae: 1, rmse: 1, mape: 1 };
+    if (!modelInfo.length) return { mse: 1, rmse: 1, mae: 1 };
     return {
-      mae: Math.max(...modelInfo.map((m) => m.mae || 0), 0.01),
+      mse: Math.max(...modelInfo.map((m) => m.mse || 0), 0.01),
       rmse: Math.max(...modelInfo.map((m) => m.rmse || 0), 0.01),
-      mape: Math.max(...modelInfo.map((m) => m.mape || 0), 0.01),
+      mae: Math.max(...modelInfo.map((m) => m.mae || 0), 0.01),
     };
   }, [modelInfo]);
 
@@ -134,13 +134,16 @@ export default function ModelInfoPanel({ modelInfo = [], loading = false }) {
                 狀態
               </th>
               <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">
-                MAE
+                MSE
               </th>
               <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">
                 RMSE
               </th>
               <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">
-                MAPE
+                MAE
+              </th>
+              <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">
+                R²
               </th>
               <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">
                 權重
@@ -169,9 +172,9 @@ export default function ModelInfoPanel({ modelInfo = [], loading = false }) {
                 <td className="px-4 py-3.5 text-right">
                   <div className="space-y-1">
                     <span className="tabular-nums text-gray-700">
-                      {formatNumber(model.mae, 2)}
+                      {formatNumber(model.mse, 2)}
                     </span>
-                    <MetricBar value={model.mae} max={maxValues.mae} color="bg-blue-400" />
+                    <MetricBar value={model.mse} max={maxValues.mse} color="bg-orange-400" />
                   </div>
                 </td>
                 <td className="px-4 py-3.5 text-right">
@@ -185,9 +188,17 @@ export default function ModelInfoPanel({ modelInfo = [], loading = false }) {
                 <td className="px-4 py-3.5 text-right">
                   <div className="space-y-1">
                     <span className="tabular-nums text-gray-700">
-                      {(model.mape ?? 0).toFixed(1)}%
+                      {formatNumber(model.mae, 2)}
                     </span>
-                    <MetricBar value={model.mape} max={maxValues.mape} color="bg-amber-400" />
+                    <MetricBar value={model.mae} max={maxValues.mae} color="bg-blue-400" />
+                  </div>
+                </td>
+                <td className="px-4 py-3.5 text-right">
+                  <div className="space-y-1">
+                    <span className="tabular-nums text-gray-700">
+                      {(model.r_squared ?? 0).toFixed(4)}
+                    </span>
+                    <MetricBar value={Math.max(model.r_squared ?? 0, 0)} max={1} color="bg-emerald-400" />
                   </div>
                 </td>
                 <td className="px-4 py-3.5 text-right">

@@ -83,14 +83,20 @@ class BasePredictor(ABC):
     ) -> Dict[str, float]:
         """Calculate standard regression metrics.
 
-        Returns a dict with keys ``mae``, ``rmse``, ``mape``.
+        Returns a dict with keys ``mse``, ``rmse``, ``mae``, ``r_squared``, ``mape``.
         """
         actual = actual.astype(float)
         predicted = predicted.astype(float)
 
         residuals = actual - predicted
+        mse = float(np.mean(residuals ** 2))
+        rmse = float(np.sqrt(mse))
         mae = float(np.mean(np.abs(residuals)))
-        rmse = float(np.sqrt(np.mean(residuals ** 2)))
+
+        # R² (coefficient of determination)
+        ss_res = float(np.sum(residuals ** 2))
+        ss_tot = float(np.sum((actual - np.mean(actual)) ** 2))
+        r_squared = 1.0 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
 
         # MAPE — skip zero actuals to avoid division by zero
         mask = actual != 0
@@ -101,7 +107,7 @@ class BasePredictor(ABC):
         else:
             mape = float("inf")
 
-        return {"mae": mae, "rmse": rmse, "mape": mape}
+        return {"mse": mse, "rmse": rmse, "mae": mae, "r_squared": r_squared, "mape": mape}
 
     def cross_validate_temporal(
         self,
