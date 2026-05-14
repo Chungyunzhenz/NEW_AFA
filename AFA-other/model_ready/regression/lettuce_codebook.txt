@@ -1,0 +1,58 @@
+Regression data for lettuce
+
+Target: target_5d
+Split: train date < 2021-08-29; test date >= 2021-08-29
+Rows: train=177377, test=89408
+
+Numeric features:
+  - high_price
+  - mid_price
+  - low_price
+  - avg_price
+  - volume_kg
+  - ln_volume
+  - year
+  - month
+  - day_of_week
+  - day_of_year
+  - month_sin
+  - month_cos
+  - avg_price_lag_1
+  - avg_price_lag_3
+  - avg_price_lag_5
+  - avg_price_lag_7
+  - volume_lag_1
+  - price_roll_mean_3
+  - price_roll_mean_7
+  - price_roll_std_7
+
+Item reference: 萵苣莖
+  item_1 = 1 if item == 萵苣菜-水耕
+  item_2 = 1 if item == 萵苣菜-本島尖葉
+  item_3 = 1 if item == 萵苣菜-本島圓葉
+  item_4 = 1 if item == 萵苣菜-其他
+  item_5 = 1 if item == 萵苣菜-油麥菜
+  item_6 = 1 if item == 萵苣菜-紅捲綠捲
+  item_7 = 1 if item == 萵苣菜-結球萵
+  item_8 = 1 if item == 萵苣菜-進口
+  item_9 = 1 if item == 萵苣菜-廣東菜
+  item_10 = 1 if item == 萵苣菜-蘿美
+
+Market reference: 104
+  market_1 = 1 if market_code == 109
+  market_2 = 1 if market_code == 220
+  market_3 = 1 if market_code == 241
+  market_4 = 1 if market_code == 260
+  market_5 = 1 if market_code == 338
+  market_6 = 1 if market_code == 400
+  market_7 = 1 if market_code == 420
+  market_8 = 1 if market_code == 514
+  market_9 = 1 if market_code == 540
+  market_10 = 1 if market_code == 648
+  market_11 = 1 if market_code == 800
+  market_12 = 1 if market_code == 900
+  market_13 = 1 if market_code == 950
+  market_14 = 1 if market_code == unknown
+
+Unseen test items encoded as all-zero item dummies: 萵苣菜-紅捲, 萵苣菜-進口 其他, 萵苣菜-進口 油麥菜, 萵苣菜-進口 結球萵, 萵苣菜-進口 廣東萵, 萵苣菜-進口 蘿美, 萵苣菜-綠捲
+Unseen test markets encoded as all-zero market dummies: none

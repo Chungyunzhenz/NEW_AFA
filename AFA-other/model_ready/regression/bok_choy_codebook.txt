@@ -1,0 +1,52 @@
+Regression data for bok_choy
+
+Target: target_5d
+Split: train date < 2021-10-11; test date >= 2021-10-11
+Rows: train=76101, test=42975
+
+Numeric features:
+  - high_price
+  - mid_price
+  - low_price
+  - avg_price
+  - volume_kg
+  - ln_volume
+  - year
+  - month
+  - day_of_week
+  - day_of_year
+  - month_sin
+  - month_cos
+  - avg_price_lag_1
+  - avg_price_lag_3
+  - avg_price_lag_5
+  - avg_price_lag_7
+  - volume_lag_1
+  - price_roll_mean_3
+  - price_roll_mean_7
+  - price_roll_std_7
+
+Item reference: 小白菜-土白菜
+  item_1 = 1 if item == 小白菜-水耕
+  item_2 = 1 if item == 小白菜-奶油白
+  item_3 = 1 if item == 小白菜-其他
+  item_4 = 1 if item == 小白菜-蚵仔白
+
+Market reference: 104
+  market_1 = 1 if market_code == 109
+  market_2 = 1 if market_code == 220
+  market_3 = 1 if market_code == 241
+  market_4 = 1 if market_code == 260
+  market_5 = 1 if market_code == 338
+  market_6 = 1 if market_code == 400
+  market_7 = 1 if market_code == 420
+  market_8 = 1 if market_code == 514
+  market_9 = 1 if market_code == 540
+  market_10 = 1 if market_code == 648
+  market_11 = 1 if market_code == 800
+  market_12 = 1 if market_code == 900
+  market_13 = 1 if market_code == 950
+  market_14 = 1 if market_code == unknown
+
+Unseen test items encoded as all-zero item dummies: none
+Unseen test markets encoded as all-zero market dummies: none
