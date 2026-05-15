@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import warnings
 import argparse
+import subprocess
+import sys
 from pathlib import Path
 from typing import Callable
 
@@ -180,6 +182,37 @@ def train_prophet(train: pd.DataFrame, test: pd.DataFrame) -> np.ndarray:
     return np.clip(forecast["yhat"].to_numpy(), 0, None)
 
 
+def train_prophet_isolated(crop: str, expected_rows: int) -> np.ndarray:
+    prophet_dir = OUT_DIR / "prophet_predictions"
+    prophet_dir.mkdir(parents=True, exist_ok=True)
+    out_file = prophet_dir / f"{crop}_prophet.csv"
+    script = ROOT / "scripts" / "train_prophet_single.py"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--crop",
+            crop,
+            "--data-dir",
+            str(DATA_DIR),
+            "--out-file",
+            str(out_file),
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip()
+        raise RuntimeError(message)
+
+    pred = pd.read_csv(out_file)["prophet"].to_numpy()
+    if len(pred) != expected_rows:
+        raise ValueError(f"Prophet returned {len(pred)} rows, expected {expected_rows}")
+    return np.clip(pred, 0, None)
+
+
 def train_sarima(train: pd.DataFrame, test: pd.DataFrame) -> np.ndarray:
     from statsmodels.tsa.statespace.sarimax import SARIMAX
 
@@ -202,7 +235,6 @@ MODEL_FNS: dict[str, Callable[[pd.DataFrame, pd.DataFrame], np.ndarray]] = {
     "random_forest": train_random_forest,
     "xgboost": train_xgboost,
     "lightgbm": train_lightgbm,
-    "prophet": train_prophet,
     "sarima_weekly": train_sarima,
 }
 
@@ -288,6 +320,13 @@ def main() -> None:
             except Exception as exc:  # keep other models running
                 failures.append({"crop": crop, "model": model_name, "error": repr(exc)})
                 print(f"  {model_name} failed: {exc}")
+
+        try:
+            print("  prophet")
+            model_preds["prophet"] = train_prophet_isolated(crop, len(test))
+        except Exception as exc:  # keep other models running
+            failures.append({"crop": crop, "model": "prophet", "error": repr(exc)})
+            print(f"  prophet failed: {exc}")
 
         for model_name, pred in model_preds.items():
             predictions[model_name] = pred

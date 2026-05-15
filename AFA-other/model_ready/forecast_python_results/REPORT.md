@@ -44,6 +44,7 @@ ML models use lag, rolling, calendar, and volume features prepared from past val
 | moving_average_7 | 1543 | 4.9565 | 7.9063 | 17.9453 | 0.7054 |
 | moving_average_14 | 1543 | 6.6039 | 10.1895 | 24.8126 | 0.5106 |
 | seasonal_naive_lag7 | 1543 | 7.7794 | 12.4739 | 28.3282 | 0.2666 |
+| prophet | 1543 | 8.8523 | 13.7558 | 33.1866 | 0.1081 |
 | sarima_weekly | 1543 | 17.4030 | 22.9589 | 60.7888 | -1.4846 |
 
 ### cauliflower
@@ -57,6 +58,7 @@ ML models use lag, rolling, calendar, and volume features prepared from past val
 | moving_average_7 | 1548 | 4.8028 | 7.1213 | 13.7708 | 0.7717 |
 | moving_average_14 | 1548 | 5.7120 | 8.1351 | 16.6584 | 0.7020 |
 | naive_lag1 | 1548 | 4.9650 | 8.4147 | 13.2625 | 0.6812 |
+| prophet | 1548 | 6.1739 | 8.8416 | 19.3687 | 0.6480 |
 | seasonal_naive_lag7 | 1548 | 6.6361 | 9.2815 | 19.1331 | 0.6121 |
 | sarima_weekly | 1548 | 11.5176 | 15.4219 | 33.5766 | -0.0708 |
 
@@ -72,6 +74,7 @@ ML models use lag, rolling, calendar, and volume features prepared from past val
 | lightgbm | 1587 | 6.6532 | 14.2473 | 7.7606 | 0.9230 |
 | moving_average_14 | 1587 | 9.5896 | 17.1453 | 12.0227 | 0.8885 |
 | seasonal_naive_lag7 | 1587 | 10.8667 | 20.6152 | 12.9796 | 0.8388 |
+| prophet | 1587 | 61.8580 | 78.1738 | 84.3692 | -1.3184 |
 | sarima_weekly | 1587 | 312.7941 | 324.0210 | 643.5361 | -38.8305 |
 
 ### lettuce
@@ -86,14 +89,8 @@ ML models use lag, rolling, calendar, and volume features prepared from past val
 | moving_average_7 | 1586 | 4.9837 | 7.0678 | 14.5685 | 0.8505 |
 | moving_average_14 | 1586 | 6.3331 | 8.9354 | 18.4835 | 0.7611 |
 | seasonal_naive_lag7 | 1586 | 6.9727 | 10.3072 | 19.8471 | 0.6821 |
+| prophet | 1586 | 9.8585 | 13.2141 | 31.7637 | 0.4775 |
 | sarima_weekly | 1586 | 36.0351 | 39.3206 | 157.3485 | -3.6262 |
-
-## Model failures
-
-- bok_choy / prophet: AttributeError("'Prophet' object has no attribute 'stan_backend'")
-- cauliflower / prophet: AttributeError("'Prophet' object has no attribute 'stan_backend'")
-- green_onion / prophet: AttributeError("'Prophet' object has no attribute 'stan_backend'")
-- lettuce / prophet: AttributeError("'Prophet' object has no attribute 'stan_backend'")
 
 ## Output files
 
