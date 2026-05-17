@@ -39,6 +39,7 @@ Thumbs.db
 # Data archive
 data_archive/
 AFA-other/afa/
+archive/old_project_copy/
 
 # CSV exports
 csv_export/
