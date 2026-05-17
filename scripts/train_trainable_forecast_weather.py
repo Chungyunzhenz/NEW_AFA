@@ -17,6 +17,8 @@ from sklearn.metrics import (
     r2_score,
     recall_score,
 )
+from sklearn.compose import TransformedTargetRegressor
+from sklearn.neural_network import MLPRegressor
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBRegressor
@@ -26,8 +28,8 @@ DATA_DIR = ROOT / "AFA-other" / "model_ready" / "trainable_forecast_weather"
 OUT_DIR = ROOT / "AFA-other" / "model_ready" / "trainable_forecast_weather_results"
 
 CROPS = ["cabbage", "bok_choy", "cauliflower", "green_onion", "lettuce"]
-HORIZONS = [1, 5, 7, 14]
-MODEL_NAMES = ["ridge", "random_forest", "xgboost", "lightgbm"]
+HORIZONS = [1, 5, 7, 14, 20]
+MODEL_NAMES = ["ridge", "random_forest", "xgboost", "lightgbm", "ann"]
 
 
 def load_feature_cols(crop: str, horizon: int) -> list[str]:
@@ -74,6 +76,25 @@ def build_model(name: str):
             random_state=42,
             n_jobs=-1,
             verbose=-1,
+        )
+    if name == "ann":
+        return TransformedTargetRegressor(
+            regressor=make_pipeline(
+                StandardScaler(),
+                MLPRegressor(
+                    hidden_layer_sizes=(64, 32),
+                    activation="relu",
+                    solver="adam",
+                    alpha=0.001,
+                    learning_rate_init=0.001,
+                    max_iter=800,
+                    early_stopping=True,
+                    validation_fraction=0.15,
+                    n_iter_no_change=30,
+                    random_state=42,
+                ),
+            ),
+            transformer=StandardScaler(),
         )
     raise ValueError(f"Unknown model: {name}")
 

@@ -12,8 +12,10 @@ import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.neural_network import MLPRegressor
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
+from sklearn.compose import TransformedTargetRegressor
 
 warnings.filterwarnings("ignore")
 
@@ -149,6 +151,30 @@ def train_lightgbm(train: pd.DataFrame, test: pd.DataFrame) -> np.ndarray:
     return np.clip(model.predict(test[feature_cols]), 0, None)
 
 
+def train_ann(train: pd.DataFrame, test: pd.DataFrame) -> np.ndarray:
+    feature_cols = get_feature_cols(train)
+    model = TransformedTargetRegressor(
+        regressor=make_pipeline(
+            StandardScaler(),
+            MLPRegressor(
+                hidden_layer_sizes=(64, 32),
+                activation="relu",
+                solver="adam",
+                alpha=0.001,
+                learning_rate_init=0.001,
+                max_iter=800,
+                early_stopping=True,
+                validation_fraction=0.15,
+                n_iter_no_change=30,
+                random_state=42,
+            ),
+        ),
+        transformer=StandardScaler(),
+    )
+    model.fit(train[feature_cols], train["y"])
+    return np.clip(model.predict(test[feature_cols]), 0, None)
+
+
 def train_prophet(train: pd.DataFrame, test: pd.DataFrame) -> np.ndarray:
     from prophet import Prophet
 
@@ -235,6 +261,7 @@ MODEL_FNS: dict[str, Callable[[pd.DataFrame, pd.DataFrame], np.ndarray]] = {
     "random_forest": train_random_forest,
     "xgboost": train_xgboost,
     "lightgbm": train_lightgbm,
+    "ann": train_ann,
     "sarima_weekly": train_sarima,
 }
 
@@ -246,8 +273,8 @@ def write_report(metrics: pd.DataFrame, failures: list[dict]) -> None:
         "",
         "Data source: `AFA-other/model_ready/forecast`.",
         "",
-        "The report compares simple baselines, classical time-series models, and machine-learning regressors.",
-        "ML models use lag, rolling, calendar, and volume features prepared from past values.",
+        "The report compares simple baselines, classical time-series models, machine-learning regressors, and an ANN model.",
+        "ML and ANN models use lag, rolling, calendar, and volume features prepared from past values.",
         "",
         "## Best model by crop",
         "",

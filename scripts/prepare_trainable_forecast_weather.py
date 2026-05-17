@@ -9,7 +9,7 @@ SRC_DIR = ROOT / "AFA-other" / "model_ready" / "forecast_weather"
 OUT_DIR = ROOT / "AFA-other" / "model_ready" / "trainable_forecast_weather"
 
 CROPS = ["cabbage", "bok_choy", "cauliflower", "green_onion", "lettuce"]
-HORIZONS = [1, 5, 7, 14]
+HORIZONS = [1, 5, 7, 14, 20]
 
 EXCLUDE_FROM_FEATURES = {
     "ds",
